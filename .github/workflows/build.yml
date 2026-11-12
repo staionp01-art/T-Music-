@@ -1548,9 +1548,8 @@ jobs:
           import java.net.HttpURLConnection
           import java.net.URL
           import java.net.URLEncoder
-          import java.util.Locale
 
-          /** بحث الأغاني على الإنترنت: Audius (أغانٍ كاملة) و iTunes (معاينة 30 ثانية). */
+          /** بحث الأغاني على الإنترنت: Audius و Jamendo (أغانٍ كاملة). */
           object Online {
               /** معرّف سالب ثابت لكل أغنية إنترنت حتى لا يتعارض مع معرّفات أغاني الجهاز. */
               private fun rid(key: String): Long = -((key.hashCode().toLong() and 0x7fffffffL) + 1)
@@ -1569,7 +1568,7 @@ jobs:
 
               suspend fun search(q: String): List<Song> = coroutineScope {
                   val a = async(Dispatchers.IO) { runCatching { audius(q) }.getOrDefault(emptyList()) }
-                  val b = async(Dispatchers.IO) { runCatching { itunes(q) }.getOrDefault(emptyList()) }
+                  val b = async(Dispatchers.IO) { runCatching { jamendo(q) }.getOrDefault(emptyList()) }
                   a.await() + b.await()
               }
 
@@ -1595,26 +1594,21 @@ jobs:
                   return out
               }
 
-              private fun itunes(q: String): List<Song> {
+              private fun jamendo(q: String): List<Song> {
                   val e = URLEncoder.encode(q, "UTF-8")
-                  val base = "https://itunes.apple.com/search?term=$e&media=music&entity=song&limit=20"
-                  val country = Locale.getDefault().country
-                  val body = try {
-                      get(if (country.length == 2) "$base&country=$country" else base)
-                  } catch (ex: Exception) {
-                      get(base)
-                  }
-                  val arr = JSONObject(body).getJSONArray("results")
+                  val arr = JSONObject(
+                      get("https://api.jamendo.com/v3.0/tracks/?client_id=709fa152&format=json&limit=20&audioformat=mp32&search=$e")
+                  ).getJSONArray("results")
                   val out = ArrayList<Song>()
                   for (i in 0 until arr.length()) {
                       val t = arr.getJSONObject(i)
-                      val prev = t.optString("previewUrl")
-                      if (prev.isEmpty()) continue
-                      val id = rid("itunes:${t.optLong("trackId")}")
+                      val url = t.optString("audio")
+                      if (url.isEmpty()) continue
+                      val id = rid("jamendo:${t.optString("id")}")
                       out += Song(
-                          id, t.optString("trackName", "بدون عنوان"), t.optString("artistName", "فنان غير معروف"),
-                          "معاينة ٣٠ ثانية • Apple Music", id, 30000L, prev,
-                          t.optString("artworkUrl100").replace("100x100", "400x400").takeIf { it.isNotEmpty() }
+                          id, t.optString("name", "بدون عنوان"), t.optString("artist_name", "فنان غير معروف"),
+                          t.optString("album_name").ifEmpty { "Jamendo" }, id, t.optLong("duration", 0L) * 1000, url,
+                          t.optString("image").takeIf { it.isNotEmpty() }
                       )
                   }
                   return out
