@@ -1,21 +1,1635 @@
-name: Build APK
+name: Android Build
+
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
-      - run: gradle assembleDebug --no-daemon
+
+      - name: Generate project files
+        run: |
+          cat > settings.gradle.kts <<'TMEOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "TMusic"
+          include(":app")
+          TMEOF
+          cat > build.gradle.kts <<'TMEOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+          }
+          TMEOF
+          cat > gradle.properties <<'TMEOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx3g
+          kotlin.code.style=official
+          TMEOF
+          cat > .gitignore <<'TMEOF'
+          .gradle/
+          build/
+          local.properties
+          .idea/
+          *.iml
+          TMEOF
+          mkdir -p app
+          cat > app/build.gradle.kts <<'TMEOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+
+          android {
+              namespace = "com.tmusic.app"
+              compileSdk = 35
+              defaultConfig {
+                  applicationId = "com.tmusic.app"
+                  minSdk = 24
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              buildFeatures { compose = true }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.15.0")
+              implementation("androidx.activity:activity-compose:1.9.3")
+              implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+              implementation("androidx.media3:media3-exoplayer:1.5.0")
+              implementation("androidx.media3:media3-session:1.5.0")
+              implementation("androidx.palette:palette-ktx:1.0.0")
+          }
+          TMEOF
+          mkdir -p app/src/main
+          cat > app/src/main/AndroidManifest.xml <<'TMEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="T Music"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".PlaybackService"
+                      android:exported="true"
+                      android:foregroundServiceType="mediaPlayback">
+                      <intent-filter>
+                          <action android:name="androidx.media3.session.MediaSessionService" />
+                      </intent-filter>
+                  </service>
+              </application>
+          </manifest>
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Theme.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.Typography
+          import androidx.compose.material3.darkColorScheme
+          import androidx.compose.runtime.Composable
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.TextStyle
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.sp
+
+          object TM {
+              val Ink = Color(0xFF0C0C11)
+              val Surface = Color(0xFF15151C)
+              val Raised = Color(0xFF1F1F29)
+              val Violet = Color(0xFF9C6BFF)
+              val VioletSoft = Color(0xFFB794FF)
+              val Blue = Color(0xFF6E8BFF)
+              val Emerald = Color(0xFF3DDBA0)
+              val Gold = Color(0xFFE2B86B)
+              val Text = Color(0xFFF2F0FA)
+              val Muted = Color(0xFFA6A3B8)
+          }
+
+          @Composable
+          fun TMusicTheme(content: @Composable () -> Unit) {
+              MaterialTheme(
+                  colorScheme = darkColorScheme(
+                      primary = TM.Violet, onPrimary = Color.Black,
+                      background = TM.Ink, onBackground = TM.Text,
+                      surface = TM.Surface, onSurface = TM.Text,
+                      surfaceVariant = TM.Raised, onSurfaceVariant = TM.Muted
+                  ),
+                  typography = Typography(
+                      headlineMedium = TextStyle(fontWeight = FontWeight.ExtraBold, fontSize = 30.sp, letterSpacing = (-0.5).sp),
+                      titleLarge = TextStyle(fontWeight = FontWeight.Bold, fontSize = 22.sp),
+                      titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
+                      bodyMedium = TextStyle(fontSize = 14.sp),
+                      bodySmall = TextStyle(fontSize = 12.sp)
+                  ),
+                  content = content
+              )
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Song.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.content.ContentUris
+          import android.content.Context
+          import android.net.Uri
+          import android.provider.MediaStore
+
+          data class Song(
+              val id: Long, val title: String, val artist: String,
+              val album: String, val albumId: Long, val duration: Long
+          ) {
+              val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+              val art: Uri get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
+          }
+
+          fun loadSongs(ctx: Context): List<Song> {
+              val out = mutableListOf<Song>()
+              val cols = arrayOf(
+                  MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
+                  MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DURATION
+              )
+              val sel = "${MediaStore.Audio.Media.IS_MUSIC}!=0 AND ${MediaStore.Audio.Media.DURATION}>30000"
+              ctx.contentResolver.query(
+                  MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cols, sel, null,
+                  "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE"
+              )?.use { c ->
+                  while (c.moveToNext()) out += Song(
+                      c.getLong(0), c.getString(1) ?: "بدون عنوان", c.getString(2) ?: "فنان غير معروف",
+                      c.getString(3) ?: "", c.getLong(4), c.getLong(5)
+                  )
+              }
+              return out
+          }
+
+          data class Album(val id: Long, val name: String, val artist: String, val songs: List<Song>)
+          data class Artist(val name: String, val songs: List<Song>)
+
+          fun List<Song>.toAlbums(): List<Album> = groupBy { it.albumId }.map { (id, s) ->
+              val artists = s.map { it.artist }.distinct()
+              Album(
+                  id, s.first().album.ifBlank { "ألبوم غير معروف" },
+                  if (artists.size == 1) artists[0] else "فنانون مختلفون", s
+              )
+          }.sortedBy { it.name.lowercase() }
+
+          fun List<Song>.toArtists(): List<Artist> =
+              groupBy { it.artist }.map { (n, s) -> Artist(n, s) }.sortedByDescending { it.songs.size }
+
+          fun fmt(ms: Long): String {
+              val s = (ms / 1000).coerceAtLeast(0)
+              return String.format(java.util.Locale.US, "%d:%02d", s / 60, s % 60)
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Art.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.content.Context
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.os.Build
+          import android.util.LruCache
+          import android.util.Size
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+
+          /** يحمّل أغلفة الألبومات بطريقة تعمل على كل إصدارات أندرويد، مع ذاكرة مؤقتة. */
+          object Art {
+              private val cache = object : LruCache<Long, Bitmap>(32 * 1024) {
+                  override fun sizeOf(key: Long, value: Bitmap) = value.byteCount / 1024
+              }
+              private val missing = HashSet<Long>()
+
+              fun peek(albumId: Long): Bitmap? = cache.get(albumId)
+
+              suspend fun get(ctx: Context, song: Song): Bitmap? {
+                  cache.get(song.albumId)?.let { return it }
+                  if (song.albumId in missing) return null
+                  val bmp = withContext(Dispatchers.IO) {
+                      try {
+                          if (Build.VERSION.SDK_INT >= 29) ctx.contentResolver.loadThumbnail(song.uri, Size(480, 480), null)
+                          else ctx.contentResolver.openInputStream(song.art)?.use { BitmapFactory.decodeStream(it) }
+                      } catch (e: Exception) { null }
+                  }
+                  if (bmp != null) cache.put(song.albumId, bmp) else missing.add(song.albumId)
+                  return bmp
+              }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Lyrics.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.content.Context
+          import java.io.File
+
+          data class LyricLine(val timeMs: Long, val text: String)
+          data class Lyrics(val lines: List<LyricLine>, val synced: Boolean)
+
+          private val TS = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
+
+          /** يقرأ تنسيق LRC المتزامن، وإن لم تكن فيه أوقات يعرض النص كما هو. */
+          fun parseLyrics(raw: String): Lyrics {
+              val timed = mutableListOf<LyricLine>()
+              val plain = mutableListOf<LyricLine>()
+              for (line in raw.replace("\r", "").lines()) {
+                  val stamps = TS.findAll(line).toList()
+                  val text = TS.replace(line, "").trim()
+                  val t = line.trim()
+                  if (stamps.isNotEmpty()) {
+                      stamps.forEach { m ->
+                          val f = m.groupValues[3]
+                          val ms = when (f.length) { 0 -> 0; 1 -> f.toInt() * 100; 2 -> f.toInt() * 10; else -> f.take(3).toInt() }
+                          timed += LyricLine(
+                              m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms,
+                              text.ifEmpty { "♪" }
+                          )
+                      }
+                  } else if (!(t.startsWith("[") && t.endsWith("]") && t.contains(":"))) {
+                      plain += LyricLine(0, t)
+                  }
+              }
+              return if (timed.isNotEmpty()) Lyrics(timed.sortedBy { it.timeMs }, true)
+              else Lyrics(plain.dropWhile { it.text.isEmpty() }, false)
+          }
+
+          object LyricsStore {
+              private fun file(ctx: Context, id: Long) =
+                  File(File(ctx.filesDir, "lyrics").apply { mkdirs() }, "$id.txt")
+
+              fun load(ctx: Context, id: Long): Lyrics? =
+                  file(ctx, id).takeIf { it.exists() }?.readText()?.let(::parseLyrics)?.takeIf { it.lines.isNotEmpty() }
+
+              fun save(ctx: Context, id: Long, raw: String) = file(ctx, id).writeText(raw)
+              fun delete(ctx: Context, id: Long) { file(ctx, id).delete() }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/PlaybackService.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import androidx.media3.common.AudioAttributes
+          import androidx.media3.exoplayer.ExoPlayer
+          import androidx.media3.session.MediaSession
+          import androidx.media3.session.MediaSessionService
+
+          class PlaybackService : MediaSessionService() {
+              private var session: MediaSession? = null
+
+              override fun onCreate() {
+                  super.onCreate()
+                  val player = ExoPlayer.Builder(this)
+                      .setAudioAttributes(AudioAttributes.DEFAULT, true)
+                      .setHandleAudioBecomingNoisy(true)
+                      .build()
+                  session = MediaSession.Builder(this, player).build()
+              }
+
+              override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
+
+              override fun onDestroy() {
+                  session?.run { player.release(); release() }
+                  session = null
+                  super.onDestroy()
+              }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/PlayerUi.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.content.ComponentName
+          import android.content.Context
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.core.content.ContextCompat
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.MediaMetadata
+          import androidx.media3.common.Player
+          import androidx.media3.session.MediaController
+          import androidx.media3.session.SessionToken
+
+          @Stable
+          class PlayerUi(ctx: Context) {
+              private val prefs = ctx.getSharedPreferences("tm", Context.MODE_PRIVATE)
+
+              var controller by mutableStateOf<MediaController?>(null)
+                  private set
+              var currentId by mutableLongStateOf(-1L)
+              var isPlaying by mutableStateOf(false)
+              var position by mutableLongStateOf(0L)
+              var duration by mutableLongStateOf(0L)
+              var shuffle by mutableStateOf(false)
+              var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
+              var recents by mutableStateOf(readRecents())
+
+              // قسم القرآن: السورة والآية الجاري تشغيلهما (0 = لا شيء / البسملة)
+              var quranSurah by mutableIntStateOf(0)
+                  private set
+              var quranAyah by mutableIntStateOf(0)
+                  private set
+              var reciterIdx by mutableIntStateOf(prefs.getInt("reciter", 0).coerceIn(0, Quran.reciters.lastIndex))
+                  private set
+
+              fun setReciter(i: Int) {
+                  reciterIdx = i.coerceIn(0, Quran.reciters.lastIndex)
+                  prefs.edit().putInt("reciter", reciterIdx).apply()
+              }
+
+              private fun readRecents(): List<Long> =
+                  (prefs.getString("recent", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }
+
+              private fun pushRecent(id: Long) {
+                  recents = (listOf(id) + recents.filter { it != id }).take(12)
+                  prefs.edit().putString("recent", recents.joinToString(",")).apply()
+              }
+
+              /** معرّف القرآن بصيغة q:السورة:الآية، وأي معرّف آخر فهو أغنية. */
+              private fun onItem(mediaId: String?, record: Boolean) {
+                  if (mediaId == null) return
+                  if (mediaId.startsWith("q:")) {
+                      val p = mediaId.split(":")
+                      quranSurah = p.getOrNull(1)?.toIntOrNull() ?: 0
+                      quranAyah = p.getOrNull(2)?.toIntOrNull() ?: 0
+                      currentId = -1L
+                  } else {
+                      quranSurah = 0; quranAyah = 0
+                      mediaId.toLongOrNull()?.let { currentId = it; if (record) pushRecent(it) }
+                  }
+              }
+
+              private val listener = object : Player.Listener {
+                  override fun onIsPlayingChanged(isPlaying: Boolean) { this@PlayerUi.isPlaying = isPlaying }
+                  override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                      onItem(mediaItem?.mediaId, record = true)
+                      syncPosition()
+                  }
+                  override fun onPlaybackStateChanged(playbackState: Int) = syncPosition()
+                  override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { shuffle = shuffleModeEnabled }
+                  override fun onRepeatModeChanged(repeatMode: Int) { repeat = repeatMode }
+              }
+
+              fun attach(c: MediaController) {
+                  controller = c
+                  c.addListener(listener)
+                  isPlaying = c.isPlaying
+                  shuffle = c.shuffleModeEnabled
+                  repeat = c.repeatMode
+                  onItem(c.currentMediaItem?.mediaId, record = false)
+                  syncPosition()
+              }
+
+              fun detach() {
+                  controller?.removeListener(listener)
+                  controller = null
+              }
+
+              fun syncPosition() {
+                  controller?.let { position = it.currentPosition; duration = it.duration.coerceAtLeast(0L) }
+              }
+
+              private fun item(s: Song) = MediaItem.Builder()
+                  .setUri(s.uri).setMediaId(s.id.toString())
+                  .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setArtworkUri(s.art).build())
+                  .build()
+
+              fun play(list: List<Song>, index: Int, shuffleMode: Boolean? = null) {
+                  val c = controller ?: return
+                  if (list.isEmpty()) return
+                  if (shuffleMode != null) c.shuffleModeEnabled = shuffleMode
+                  c.setMediaItems(list.map(::item), index.coerceIn(list.indices), 0)
+                  c.prepare(); c.play()
+              }
+
+              /** يشغّل السورة آية بعد آية (مع البسملة في البداية) بصوت القارئ المختار. */
+              fun playQuran(surah: Int, startAyah: Int = 1) {
+                  val c = controller ?: return
+                  val info = Quran.surahs.getOrNull(surah - 1) ?: return
+                  val reciter = Quran.reciters[reciterIdx]
+                  fun q(s: Int, a: Int, urlSurah: Int, urlAyah: Int, label: String) = MediaItem.Builder()
+                      .setUri(Quran.audioUrl(reciter.folder, urlSurah, urlAyah))
+                      .setMediaId("q:$s:$a")
+                      .setMediaMetadata(MediaMetadata.Builder().setTitle("سورة ${info.name} - $label").setArtist(reciter.name).build())
+                      .build()
+                  val bism = Quran.hasBasmala(surah)
+                  val items = buildList {
+                      if (bism) add(q(surah, 0, 1, 1, "البسملة"))
+                      for (a in 1..info.ayahs) add(q(surah, a, surah, a, "آية ${Quran.digits(a)}"))
+                  }
+                  val start = if (startAyah <= 1) 0 else (startAyah - 1) + (if (bism) 1 else 0)
+                  c.shuffleModeEnabled = false
+                  c.repeatMode = Player.REPEAT_MODE_OFF
+                  c.setMediaItems(items, start.coerceIn(items.indices), 0)
+                  c.prepare(); c.play()
+              }
+
+              fun togglePlay() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
+              fun next() { controller?.seekToNext() }
+              fun previous() { controller?.seekToPrevious() }
+              fun seek(ms: Long) { controller?.seekTo(ms); position = ms }
+              fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
+              fun cycleRepeat() {
+                  controller?.let {
+                      it.repeatMode = when (it.repeatMode) {
+                          Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                          Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                          else -> Player.REPEAT_MODE_OFF
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun rememberPlayerUi(): PlayerUi {
+              val ctx = LocalContext.current
+              val ui = remember { PlayerUi(ctx.applicationContext) }
+              DisposableEffect(Unit) {
+                  val f = MediaController.Builder(ctx, SessionToken(ctx, ComponentName(ctx, PlaybackService::class.java))).buildAsync()
+                  f.addListener({ runCatching { ui.attach(f.get()) } }, ContextCompat.getMainExecutor(ctx))
+                  onDispose { ui.detach(); MediaController.releaseFuture(f) }
+              }
+              return ui
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Components.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.graphics.Bitmap
+          import androidx.compose.animation.animateColorAsState
+          import androidx.compose.animation.core.*
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.alpha
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.geometry.Size
+          import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.palette.graphics.Palette
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import kotlin.math.abs
+
+          @Composable
+          fun rememberArt(song: Song?): State<Bitmap?> {
+              val ctx = LocalContext.current.applicationContext
+              return produceState<Bitmap?>(song?.let { Art.peek(it.albumId) }, song?.albumId) {
+                  value = song?.let { Art.get(ctx, it) }
+              }
+          }
+
+          /** لون مستخرج من الغلاف، يتحرك بنعومة عند تغيّر الأغنية. */
+          @Composable
+          fun rememberCoverColor(song: Song?, fallback: Color): Color {
+              val art by rememberArt(song)
+              val target by produceState(fallback, art) {
+                  val b = art
+                  value = if (b == null) fallback else withContext(Dispatchers.Default) {
+                      val p = Palette.from(b).maximumColorCount(16).generate()
+                      val sw = p.vibrantSwatch ?: p.mutedSwatch ?: p.dominantSwatch
+                      if (sw == null) fallback else lerp(TM.Ink, Color(sw.rgb), 0.62f)
+                  }
+              }
+              return animateColorAsState(target, tween(700), label = "cover-color").value
+          }
+
+          @Composable
+          fun Cover(song: Song?, modifier: Modifier = Modifier, corner: Dp = 12.dp) {
+              val art by rememberArt(song)
+              val hue = abs(((song?.albumId ?: 0L) * 47) % 360).toFloat()
+              Box(
+                  modifier
+                      .clip(RoundedCornerShape(corner))
+                      .background(Brush.linearGradient(listOf(Color.hsv(hue, 0.5f, 0.45f), Color.hsv((hue + 40) % 360, 0.6f, 0.22f)))),
+                  contentAlignment = Alignment.Center
+              ) {
+                  val b = art
+                  if (b == null) Icon(Icons.Rounded.MusicNote, null, tint = Color.White.copy(0.5f), modifier = Modifier.fillMaxSize(0.4f))
+                  else Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+              }
+          }
+
+          @Composable
+          fun EqBars(playing: Boolean, color: Color) {
+              val t = rememberInfiniteTransition(label = "eq")
+              Row(Modifier.height(16.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+                  listOf(420, 560, 360).forEachIndexed { i, d ->
+                      val h by t.animateFloat(0.25f, 1f, infiniteRepeatable(tween(d, easing = LinearEasing), RepeatMode.Reverse), label = "bar$i")
+                      Box(Modifier.width(3.dp).fillMaxHeight(if (playing) h else 0.3f).background(color, RoundedCornerShape(2.dp)))
+                  }
+              }
+          }
+
+          @Composable
+          fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+              Text(text, style = MaterialTheme.typography.titleLarge, modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+          }
+
+          @Composable
+          fun SongRow(song: Song, active: Boolean, playing: Boolean, onClick: () -> Unit) {
+              Row(
+                  Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Cover(song, Modifier.size(52.dp), 8.dp)
+                  Spacer(Modifier.width(14.dp))
+                  Column(Modifier.weight(1f)) {
+                      Text(
+                          song.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                          color = if (active) TM.VioletSoft else TM.Text, fontWeight = FontWeight.SemiBold
+                      )
+                      Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = TM.Muted)
+                  }
+                  Spacer(Modifier.width(10.dp))
+                  if (active) EqBars(playing, TM.VioletSoft)
+                  else Text(fmt(song.duration), style = MaterialTheme.typography.bodySmall, color = TM.Muted)
+              }
+          }
+
+          @Composable
+          fun ProgressLine(frac: Float, modifier: Modifier = Modifier) {
+              Canvas(modifier.fillMaxWidth().height(2.dp)) {
+                  drawRect(Color.White, size = Size(size.width * frac.coerceIn(0f, 1f), size.height))
+              }
+          }
+
+          @Composable
+          fun MiniPlayer(song: Song, ui: PlayerUi, tint: Color, onOpen: () -> Unit) {
+              Box(
+                  Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)
+                      .clip(RoundedCornerShape(16.dp)).background(tint).clickable(onClick = onOpen)
+              ) {
+                  Row(Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Cover(song, Modifier.size(44.dp), 8.dp)
+                      Spacer(Modifier.width(12.dp))
+                      Column(Modifier.weight(1f)) {
+                          Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                          Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = Color.White.copy(0.7f))
+                      }
+                      IconButton(ui::togglePlay) {
+                          Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(30.dp))
+                      }
+                      IconButton(ui::next) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(28.dp)) }
+                  }
+                  ProgressLine(
+                      if (ui.duration > 0) ui.position.toFloat() / ui.duration else 0f,
+                      Modifier.align(Alignment.BottomCenter).alpha(0.9f)
+                  )
+              }
+          }
+
+          @Composable
+          fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier) {
+              Column(modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                  Icon(icon, null, Modifier.size(56.dp), tint = TM.Muted)
+                  Spacer(Modifier.height(16.dp))
+                  Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                  Spacer(Modifier.height(6.dp))
+                  Text(body, color = TM.Muted, textAlign = TextAlign.Center)
+              }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Screens.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.LazyRow
+          import androidx.compose.foundation.lazy.grid.GridCells
+          import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+          import androidx.compose.foundation.lazy.grid.items
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.itemsIndexed
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import java.util.Calendar
+
+          @Composable
+          fun HomeTab(songs: List<Song>, albums: List<Album>, byId: Map<Long, Song>, ui: PlayerUi) {
+              if (songs.isEmpty()) {
+                  EmptyState(Icons.Rounded.LibraryMusic, "لا توجد أغانٍ على جهازك", "انسخ ملفات صوتية إلى الهاتف وستظهر هنا مباشرة.")
+                  return
+              }
+              val quick = remember(ui.recents, songs) {
+                  ui.recents.mapNotNull { byId[it] }.ifEmpty { songs }.take(6)
+              }
+              val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+              val greet = when { hour < 5 -> "ليلة هادئة"; hour < 12 -> "صباح الخير"; hour < 18 -> "طاب يومك"; else -> "مساء الخير" }
+
+              LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
+                  item {
+                      Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)) {
+                          Text(greet, color = TM.Muted)
+                          Text(
+                              "T Music",
+                              style = MaterialTheme.typography.headlineMedium.copy(brush = Brush.horizontalGradient(listOf(TM.VioletSoft, TM.Blue)))
+                          )
+                      }
+                  }
+                  item {
+                      Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                          quick.chunked(2).forEach { pair ->
+                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                  pair.forEach { s ->
+                                      Row(
+                                          Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(TM.Raised)
+                                              .clickable { ui.play(songs, songs.indexOfFirst { it.id == s.id }) },
+                                          verticalAlignment = Alignment.CenterVertically
+                                      ) {
+                                          Cover(s, Modifier.size(56.dp), 0.dp)
+                                          Text(
+                                              s.title, Modifier.padding(horizontal = 10.dp), maxLines = 2,
+                                              overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp
+                                          )
+                                      }
+                                  }
+                                  if (pair.size == 1) Spacer(Modifier.weight(1f))
+                              }
+                          }
+                      }
+                  }
+                  item {
+                      Box(
+                          Modifier.fillMaxWidth().padding(16.dp).clip(RoundedCornerShape(20.dp))
+                              .background(Brush.horizontalGradient(listOf(TM.Violet, TM.Blue)))
+                              .clickable { ui.play(songs, songs.indices.random(), shuffleMode = true) }
+                              .padding(20.dp)
+                      ) {
+                          Row(verticalAlignment = Alignment.CenterVertically) {
+                              Icon(Icons.Rounded.Shuffle, null, Modifier.size(32.dp), tint = Color.White)
+                              Spacer(Modifier.width(14.dp))
+                              Column {
+                                  Text("تشغيل عشوائي", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                  Text("${songs.size} أغنية من مكتبتك", color = Color.White.copy(0.8f), fontSize = 13.sp)
+                              }
+                          }
+                      }
+                  }
+                  if (albums.isNotEmpty()) {
+                      item {
+                          SectionTitle("ألبوماتك")
+                          LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                              items(albums, key = { it.id }) { AlbumCard(it, ui, Modifier.width(148.dp)) }
+                          }
+                      }
+                  }
+                  item { SectionTitle("كل الأغاني") }
+                  itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
+                      SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(songs, i) }
+                  }
+              }
+          }
+
+          @Composable
+          fun AlbumCard(album: Album, ui: PlayerUi, modifier: Modifier = Modifier) {
+              Column(modifier.clip(RoundedCornerShape(14.dp)).clickable { ui.play(album.songs, 0) }) {
+                  Cover(album.songs.first(), Modifier.fillMaxWidth().aspectRatio(1f), 14.dp)
+                  Text(album.name, Modifier.padding(top = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                  Text(album.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = TM.Muted)
+              }
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun SearchTab(songs: List<Song>, artists: List<Artist>, ui: PlayerUi) {
+              var q by remember { mutableStateOf("") }
+              val results = remember(songs, q) {
+                  if (q.isBlank()) emptyList()
+                  else songs.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
+              }
+              Column(Modifier.fillMaxSize()) {
+                  Text("بحث", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+                  TextField(
+                      value = q, onValueChange = { q = it }, singleLine = true,
+                      placeholder = { Text("أغنية، فنان، أو ألبوم") },
+                      leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                      trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
+                      shape = RoundedCornerShape(14.dp),
+                      colors = TextFieldDefaults.colors(
+                          focusedContainerColor = TM.Raised, unfocusedContainerColor = TM.Raised,
+                          focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
+                      ),
+                      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                  )
+                  Spacer(Modifier.height(8.dp))
+                  when {
+                      q.isBlank() -> {
+                          SectionTitle("ابدأ بفنان")
+                          LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                              items(artists.take(10), key = { it.name }) { a ->
+                                  AssistChip(onClick = { q = a.name }, label = { Text(a.name) })
+                              }
+                          }
+                      }
+                      results.isEmpty() -> EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم الفنان.")
+                      else -> LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
+                          itemsIndexed(results, key = { _, s -> s.id }) { i, s ->
+                              SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(results, i) }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun LibraryTab(albums: List<Album>, artists: List<Artist>, ui: PlayerUi) {
+              var mode by remember { mutableIntStateOf(0) }
+              Column(Modifier.fillMaxSize()) {
+                  Text("مكتبتي", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+                  Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      FilterChip(mode == 0, { mode = 0 }, label = { Text("الألبومات") })
+                      FilterChip(mode == 1, { mode = 1 }, label = { Text("الفنانون") })
+                  }
+                  Spacer(Modifier.height(8.dp))
+                  if (mode == 0) {
+                      LazyVerticalGrid(
+                          GridCells.Fixed(2), contentPadding = PaddingValues(16.dp),
+                          horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
+                      ) { items(albums, key = { it.id }) { AlbumCard(it, ui) } }
+                  } else {
+                      LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
+                          items(artists, key = { it.name }) { a ->
+                              Row(
+                                  Modifier.fillMaxWidth().clickable { ui.play(a.songs, 0) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                  Cover(a.songs.first(), Modifier.size(56.dp), 28.dp)
+                                  Spacer(Modifier.width(14.dp))
+                                  Column {
+                                      Text(a.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                      Text("${a.songs.size} أغنية", fontSize = 12.sp, color = TM.Muted)
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/NowPlaying.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.net.Uri
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.animation.Crossfade
+          import androidx.compose.animation.animateColorAsState
+          import androidx.compose.animation.core.*
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.itemsIndexed
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.drawWithContent
+          import androidx.compose.ui.draw.shadow
+          import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.platform.LocalLayoutDirection
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.LayoutDirection
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.media3.common.Player
+
+          @Composable
+          fun NowPlaying(song: Song, ui: PlayerUi, onClose: () -> Unit) {
+              val ctx = LocalContext.current
+              val tint = rememberCoverColor(song, TM.Raised)
+              var showLyrics by remember { mutableStateOf(false) }
+              var version by remember { mutableIntStateOf(0) }
+              val lyrics = remember(song.id, version) { LyricsStore.load(ctx, song.id) }
+              var showPaste by remember { mutableStateOf(false) }
+
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+                  val text = uri?.let {
+                      runCatching { ctx.contentResolver.openInputStream(it)?.bufferedReader(Charsets.UTF_8)?.use { r -> r.readText() } }.getOrNull()
+                  }
+                  if (!text.isNullOrBlank()) { LyricsStore.save(ctx, song.id, text); version++ }
+              }
+
+              Box(
+                  Modifier.fillMaxSize()
+                      .background(Brush.verticalGradient(0f to tint, 0.75f to TM.Ink, 1f to TM.Ink))
+                      .clickable(enabled = false) {}
+              ) {
+                  Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
+                      // الشريط العلوي
+                      Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                          IconButton(onClose) { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(32.dp)) }
+                          Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                              Text("يُشغَّل الآن", fontSize = 12.sp, color = Color.White.copy(0.65f))
+                              Text(
+                                  song.album.ifBlank { song.artist }, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                                  maxLines = 1, overflow = TextOverflow.Ellipsis
+                              )
+                          }
+                          IconButton({ showLyrics = !showLyrics }) {
+                              Icon(Icons.Rounded.Lyrics, null, tint = if (showLyrics) TM.VioletSoft else Color.White, modifier = Modifier.size(26.dp))
+                          }
+                      }
+
+                      // المنطقة الوسطى: الغلاف أو الكلمات
+                      Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                          Crossfade(showLyrics, label = "stage") { lyricsOn ->
+                              if (lyricsOn) LyricsPanel(
+                                  lyrics, ui,
+                                  onPick = { picker.launch(arrayOf("*/*")) },
+                                  onPaste = { showPaste = true },
+                                  onClear = { LyricsStore.delete(ctx, song.id); version++ }
+                              ) else CoverStage(song, ui.isPlaying)
+                          }
+                      }
+
+                      // العنوان
+                      Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                          Text(song.title, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                          Text(song.artist, fontSize = 16.sp, color = Color.White.copy(0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      }
+
+                      // شريط التقدّم + الأزرار (دائمًا من اليسار لليمين)
+                      CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                          Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)) {
+                              var drag by remember { mutableStateOf<Float?>(null) }
+                              val dur = ui.duration.coerceAtLeast(1L).toFloat()
+                              val shown = (drag ?: ui.position.toFloat()).coerceIn(0f, dur)
+                              Slider(
+                                  value = shown, valueRange = 0f..dur,
+                                  onValueChange = { drag = it },
+                                  onValueChangeFinished = { drag?.let { ui.seek(it.toLong()) }; drag = null },
+                                  thumb = { Box(Modifier.size(14.dp).background(Color.White, CircleShape)) },
+                                  colors = SliderDefaults.colors(
+                                      activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.22f)
+                                  )
+                              )
+                              Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                  Text(fmt(shown.toLong()), fontSize = 12.sp, color = Color.White.copy(0.65f))
+                                  Text(fmt(ui.duration), fontSize = 12.sp, color = Color.White.copy(0.65f))
+                              }
+                              Spacer(Modifier.height(8.dp))
+                              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                  IconButton(ui::toggleShuffle) {
+                                      Icon(Icons.Rounded.Shuffle, null, tint = if (ui.shuffle) TM.VioletSoft else Color.White.copy(0.7f))
+                                  }
+                                  IconButton(ui::previous, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, null, Modifier.size(40.dp)) }
+                                  FilledIconButton(
+                                      ui::togglePlay, Modifier.size(72.dp),
+                                      colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.White, contentColor = Color.Black)
+                                  ) {
+                                      Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(42.dp))
+                                  }
+                                  IconButton(ui::next, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(40.dp)) }
+                                  IconButton(ui::cycleRepeat) {
+                                      Icon(
+                                          if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null,
+                                          tint = if (ui.repeat != Player.REPEAT_MODE_OFF) TM.VioletSoft else Color.White.copy(0.7f)
+                                      )
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+
+              if (showPaste) {
+                  var text by remember { mutableStateOf("") }
+                  AlertDialog(
+                      onDismissRequest = { showPaste = false },
+                      title = { Text("لصق الكلمات") },
+                      text = {
+                          OutlinedTextField(
+                              text, { text = it }, minLines = 6, maxLines = 10,
+                              placeholder = { Text("الصق الكلمات هنا. يدعم تنسيق LRC المتزامن.") }
+                          )
+                      },
+                      confirmButton = {
+                          TextButton({
+                              if (text.isNotBlank()) { LyricsStore.save(ctx, song.id, text); version++ }
+                              showPaste = false
+                          }) { Text("حفظ") }
+                      },
+                      dismissButton = { TextButton({ showPaste = false }) { Text("إلغاء") } }
+                  )
+              }
+          }
+
+          /** الغلاف الكبير؛ يصغر قليلًا عند الإيقاف ويعود بنبضة عند التشغيل. */
+          @Composable
+          private fun CoverStage(song: Song, playing: Boolean) {
+              val scale by animateFloatAsState(
+                  if (playing) 1f else 0.82f, spring(dampingRatio = 0.55f, stiffness = 220f), label = "cover-scale"
+              )
+              BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                  val s = minOf(maxWidth, maxHeight)
+                  Cover(
+                      song,
+                      Modifier.size(s)
+                          .graphicsLayer { scaleX = scale; scaleY = scale }
+                          .shadow(28.dp, RoundedCornerShape(22.dp)),
+                      corner = 22.dp
+                  )
+              }
+          }
+
+          @Composable
+          private fun LyricsPanel(
+              lyrics: Lyrics?, ui: PlayerUi,
+              onPick: () -> Unit, onPaste: () -> Unit, onClear: () -> Unit
+          ) {
+              if (lyrics == null) {
+                  Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                      Icon(Icons.Rounded.Lyrics, null, Modifier.size(52.dp), tint = Color.White.copy(0.5f))
+                      Spacer(Modifier.height(14.dp))
+                      Text("لا توجد كلمات لهذه الأغنية", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                      Spacer(Modifier.height(6.dp))
+                      Text(
+                          "أضف ملف .lrc لتظهر الكلمات متزامنة مع الصوت، أو الصق النص.",
+                          color = Color.White.copy(0.65f), textAlign = TextAlign.Center
+                      )
+                      Spacer(Modifier.height(20.dp))
+                      Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                          FilledTonalButton(onPick) {
+                              Icon(Icons.Rounded.UploadFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("اختيار ملف")
+                          }
+                          OutlinedButton(onPaste) {
+                              Icon(Icons.Rounded.ContentPaste, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("لصق نص")
+                          }
+                      }
+                  }
+                  return
+              }
+
+              val listState = rememberLazyListState()
+              val active by remember(lyrics) {
+                  derivedStateOf { if (lyrics.synced) lyrics.lines.indexOfLast { it.timeMs <= ui.position + 250 } else -1 }
+              }
+              LaunchedEffect(active) {
+                  if (active >= 0) listState.animateScrollToItem(active, -listState.layoutInfo.viewportSize.height / 3)
+              }
+
+              LazyColumn(
+                  state = listState,
+                  contentPadding = PaddingValues(vertical = 90.dp),
+                  modifier = Modifier.fillMaxSize()
+                      .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                      .drawWithContent {
+                          drawContent()
+                          drawRect(
+                              Brush.verticalGradient(0f to Color.Transparent, 0.12f to Color.Black, 0.88f to Color.Black, 1f to Color.Transparent),
+                              blendMode = BlendMode.DstIn
+                          )
+                      }
+              ) {
+                  itemsIndexed(lyrics.lines) { i, line ->
+                      val on = lyrics.synced && i == active
+                      val color by animateColorAsState(
+                          when { !lyrics.synced -> Color.White.copy(0.9f); on -> Color.White; else -> Color.White.copy(0.32f) },
+                          tween(300), label = "lyric-color"
+                      )
+                      val size by animateFloatAsState(if (on) 28f else 24f, tween(300), label = "lyric-size")
+                      Text(
+                          line.text, color = color, fontSize = size.sp, lineHeight = (size * 1.3f).sp, fontWeight = FontWeight.Bold,
+                          modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                              .then(if (lyrics.synced) Modifier.clickable { ui.seek(line.timeMs) } else Modifier)
+                              .padding(horizontal = 4.dp, vertical = 9.dp)
+                      )
+                  }
+                  item {
+                      TextButton(onClear, Modifier.padding(top = 24.dp)) {
+                          Icon(Icons.Rounded.Delete, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("حذف الكلمات")
+                      }
+                  }
+              }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Quran.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.content.Context
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.withContext
+          import org.json.JSONObject
+          import java.io.File
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.util.Locale
+
+          data class SurahInfo(val number: Int, val name: String, val ayahs: Int)
+          data class Reciter(val name: String, val folder: String)
+
+          /** بيانات القرآن: أسماء السور وأعداد الآيات، القرّاء، وتحميل النص مع تخزين محلي. */
+          object Quran {
+              private val names = listOf(
+                  "الفاتحة", "البقرة", "آل عمران", "النساء", "المائدة", "الأنعام", "الأعراف", "الأنفال", "التوبة", "يونس",
+                  "هود", "يوسف", "الرعد", "إبراهيم", "الحجر", "النحل", "الإسراء", "الكهف", "مريم", "طه",
+                  "الأنبياء", "الحج", "المؤمنون", "النور", "الفرقان", "الشعراء", "النمل", "القصص", "العنكبوت", "الروم",
+                  "لقمان", "السجدة", "الأحزاب", "سبأ", "فاطر", "يس", "الصافات", "ص", "الزمر", "غافر",
+                  "فصلت", "الشورى", "الزخرف", "الدخان", "الجاثية", "الأحقاف", "محمد", "الفتح", "الحجرات", "ق",
+                  "الذاريات", "الطور", "النجم", "القمر", "الرحمن", "الواقعة", "الحديد", "المجادلة", "الحشر", "الممتحنة",
+                  "الصف", "الجمعة", "المنافقون", "التغابن", "الطلاق", "التحريم", "الملك", "القلم", "الحاقة", "المعارج",
+                  "نوح", "الجن", "المزمل", "المدثر", "القيامة", "الإنسان", "المرسلات", "النبأ", "النازعات", "عبس",
+                  "التكوير", "الانفطار", "المطففين", "الانشقاق", "البروج", "الطارق", "الأعلى", "الغاشية", "الفجر", "البلد",
+                  "الشمس", "الليل", "الضحى", "الشرح", "التين", "العلق", "القدر", "البينة", "الزلزلة", "العاديات",
+                  "القارعة", "التكاثر", "العصر", "الهمزة", "الفيل", "قريش", "الماعون", "الكوثر", "الكافرون", "النصر",
+                  "المسد", "الإخلاص", "الفلق", "الناس"
+              )
+
+              private val counts = intArrayOf(
+                  7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
+                  123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+                  112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
+                  34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
+                  54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
+                  60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
+                  14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
+                  28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
+                  29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
+                  15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
+                  11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
+                  5, 4, 5, 6
+              )
+
+              val surahs: List<SurahInfo> = names.indices.map { SurahInfo(it + 1, names[it], counts[it]) }
+
+              val reciters = listOf(
+                  Reciter("مشاري العفاسي", "Alafasy_128kbps"),
+                  Reciter("عبد الرحمن السديس", "Abdurrahmaan_As-Sudais_192kbps"),
+                  Reciter("سعود الشريم", "Saood_ash-Shuraym_128kbps"),
+                  Reciter("محمود الحصري", "Husary_128kbps"),
+                  Reciter("عبد الباسط عبد الصمد", "Abdul_Basit_Murattal_192kbps"),
+                  Reciter("محمد صديق المنشاوي", "Minshawy_Murattal_128kbps")
+              )
+
+              /** كل السور تبدأ بالبسملة عدا الفاتحة (هي آية فيها) والتوبة (بلا بسملة). */
+              fun hasBasmala(surah: Int) = surah != 1 && surah != 9
+
+              fun audioUrl(folder: String, surah: Int, ayah: Int): String =
+                  String.format(Locale.US, "https://everyayah.com/data/%s/%03d%03d.mp3", folder, surah, ayah)
+
+              fun digits(n: Int): String = n.toString().map { '٠' + (it - '0') }.joinToString("")
+
+              fun normalize(s: String): String = s.trim()
+                  .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
+                  .replace('ة', 'ه').replace('ى', 'ي')
+
+              /** يحمّل آيات السورة؛ من الذاكرة المحلية إن وُجدت وإلا من الإنترنت ثم يحفظها. */
+              suspend fun load(ctx: Context, surah: Int): List<String>? = withContext(Dispatchers.IO) {
+                  val expected = counts[surah - 1]
+                  val f = File(File(ctx.filesDir, "quran").apply { mkdirs() }, "$surah.txt")
+                  if (f.exists()) {
+                      val cached = f.readLines()
+                      if (cached.size == expected) return@withContext cached
+                  }
+                  try {
+                      val conn = URL("https://api.alquran.cloud/v1/surah/$surah/quran-uthmani").openConnection() as HttpURLConnection
+                      conn.connectTimeout = 15000
+                      conn.readTimeout = 20000
+                      val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                      conn.disconnect()
+                      val arr = JSONObject(body).getJSONObject("data").getJSONArray("ayahs")
+                      val out = (0 until arr.length()).map { i ->
+                          val t = arr.getJSONObject(i).getString("text").replace("\n", " ").trim()
+                          if (i == 0 && hasBasmala(surah)) stripBasmala(t) else t
+                      }
+                      if (out.size == expected) { f.writeText(out.joinToString("\n")); out } else null
+                  } catch (e: Exception) {
+                      null
+                  }
+              }
+
+              /** النص العثماني يضع البسملة في أول آية؛ نفصلها لنعرضها في الترويسة. */
+              private fun stripBasmala(t: String): String {
+                  val words = t.split(" ")
+                  if (words.size <= 4) return t
+                  val first = words[0].filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
+                  return if (first == "بسم") words.drop(4).joinToString(" ") else t
+              }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/QuranScreens.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import androidx.activity.compose.BackHandler
+          import androidx.compose.animation.animateColorAsState
+          import androidx.compose.animation.core.tween
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.itemsIndexed
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.platform.LocalLayoutDirection
+          import androidx.compose.ui.text.SpanStyle
+          import androidx.compose.ui.text.buildAnnotatedString
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.text.withStyle
+          import androidx.compose.ui.unit.LayoutDirection
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+
+          /** مبدّل الأقسام العلوي: T Music | T Quran */
+          @Composable
+          fun SectionSwitch(section: Int, onSelect: (Int) -> Unit) {
+              Row(
+                  Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)
+                      .clip(RoundedCornerShape(24.dp)).background(TM.Raised).padding(4.dp)
+              ) {
+                  listOf("T Music" to Icons.Rounded.MusicNote, "T Quran" to Icons.Rounded.MenuBook).forEachIndexed { i, (label, icon) ->
+                      val on = section == i
+                      val bg by animateColorAsState(
+                          if (on) (if (i == 0) TM.Violet else TM.Emerald) else Color.Transparent, tween(250), label = "section-bg"
+                      )
+                      Row(
+                          Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(bg)
+                              .clickable { onSelect(i) }.padding(vertical = 10.dp),
+                          horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Icon(icon, null, Modifier.size(18.dp), tint = if (on) Color.Black else TM.Muted)
+                          Spacer(Modifier.width(6.dp))
+                          Text(label, fontWeight = FontWeight.Bold, color = if (on) Color.Black else TM.Muted)
+                      }
+                  }
+              }
+          }
+
+          /** قسم القرآن كاملًا: قائمة السور، وعند اختيار سورة تُفتح شاشة القراءة. */
+          @Composable
+          fun QuranTab(ui: PlayerUi, openSurah: Int, onOpen: (Int) -> Unit) {
+              CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                  if (openSurah != 0) SurahReader(openSurah, ui) { onOpen(0) }
+                  else SurahList(ui, onOpen)
+              }
+          }
+
+          @Composable
+          private fun SurahList(ui: PlayerUi, onOpen: (Int) -> Unit) {
+              var q by remember { mutableStateOf("") }
+              val list = remember(q) {
+                  val k = Quran.normalize(q)
+                  if (k.isEmpty()) Quran.surahs
+                  else Quran.surahs.filter { Quran.normalize(it.name).contains(k) || it.number.toString() == k }
+              }
+              Column(Modifier.fillMaxSize()) {
+                  Text(
+                      "القرآن الكريم", style = MaterialTheme.typography.headlineMedium,
+                      modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
+                  )
+                  TextField(
+                      value = q, onValueChange = { q = it }, singleLine = true,
+                      placeholder = { Text("ابحث عن سورة") },
+                      leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                      trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
+                      shape = RoundedCornerShape(14.dp),
+                      colors = TextFieldDefaults.colors(
+                          focusedContainerColor = TM.Raised, unfocusedContainerColor = TM.Raised,
+                          focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
+                      ),
+                      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                  )
+                  Spacer(Modifier.height(8.dp))
+                  if (list.isEmpty()) {
+                      EmptyState(Icons.Rounded.Search, "لا توجد سورة بهذا الاسم", "جرّب كتابة جزء من الاسم أو رقم السورة.")
+                  } else {
+                      LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
+                          items(list, key = { it.number }) { s ->
+                              val active = ui.quranSurah == s.number
+                              Row(
+                                  Modifier.fillMaxWidth().clickable { onOpen(s.number) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                  Box(
+                                      Modifier.size(44.dp).background(TM.Emerald.copy(alpha = if (active) 0.28f else 0.14f), CircleShape),
+                                      contentAlignment = Alignment.Center
+                                  ) { Text(Quran.digits(s.number), color = TM.Emerald, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+                                  Spacer(Modifier.width(14.dp))
+                                  Column(Modifier.weight(1f)) {
+                                      Text(
+                                          "سورة ${s.name}", fontWeight = FontWeight.SemiBold, fontSize = 18.sp,
+                                          color = if (active) TM.Emerald else TM.Text, maxLines = 1, overflow = TextOverflow.Ellipsis
+                                      )
+                                      Text("${Quran.digits(s.ayahs)} آية", fontSize = 12.sp, color = TM.Muted)
+                                  }
+                                  if (active) EqBars(ui.isPlaying, TM.Emerald)
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun ReciterPicker(ui: PlayerUi, onPick: (Int) -> Unit) {
+              var open by remember { mutableStateOf(false) }
+              Box {
+                  TextButton({ open = true }) {
+                      Text(
+                          Quran.reciters[ui.reciterIdx].name, color = TM.Emerald, fontSize = 13.sp,
+                          maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 130.dp)
+                      )
+                      Icon(Icons.Rounded.ArrowDropDown, null, tint = TM.Emerald)
+                  }
+                  DropdownMenu(open, { open = false }) {
+                      Quran.reciters.forEachIndexed { i, r ->
+                          DropdownMenuItem(text = { Text(r.name) }, onClick = { open = false; onPick(i) })
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          private fun SurahReader(n: Int, ui: PlayerUi, onBack: () -> Unit) {
+              val ctx = LocalContext.current
+              val info = Quran.surahs[n - 1]
+              var lines by remember(n) { mutableStateOf<List<String>?>(null) }
+              var failed by remember(n) { mutableStateOf(false) }
+              var attempt by remember(n) { mutableIntStateOf(0) }
+              LaunchedEffect(n, attempt) {
+                  failed = false
+                  val r = Quran.load(ctx, n)
+                  lines = r
+                  failed = r == null
+              }
+              BackHandler(onBack = onBack)
+
+              val active = ui.quranSurah == n
+              val listState = rememberLazyListState()
+              val ls = lines
+              LaunchedEffect(ui.quranAyah, active, ls != null) {
+                  if (active && ls != null) listState.animateScrollToItem(ui.quranAyah.coerceAtLeast(0))
+              }
+
+              Column(Modifier.fillMaxSize()) {
+                  Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                      IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, null) }
+                      Column(Modifier.weight(1f)) {
+                          Text("سورة ${info.name}", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                          Text("${Quran.digits(info.ayahs)} آية", fontSize = 12.sp, color = TM.Muted)
+                      }
+                      ReciterPicker(ui) { i ->
+                          ui.setReciter(i)
+                          if (active) ui.playQuran(n, ui.quranAyah.coerceAtLeast(1))
+                      }
+                  }
+
+                  when {
+                      ls != null -> LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp), modifier = Modifier.fillMaxSize()) {
+                          item {
+                              Column(
+                                  Modifier.fillMaxWidth().padding(16.dp).clip(RoundedCornerShape(22.dp))
+                                      .background(Brush.linearGradient(listOf(Color(0xFF0F5C47), Color(0xFF123A4A))))
+                                      .padding(20.dp),
+                                  horizontalAlignment = Alignment.CenterHorizontally
+                              ) {
+                                  Text("سورة ${info.name}", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                                  if (Quran.hasBasmala(n)) {
+                                      Spacer(Modifier.height(10.dp))
+                                      Text(
+                                          "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", fontSize = 24.sp, textAlign = TextAlign.Center,
+                                          color = if (active && ui.quranAyah == 0) TM.Gold else Color.White.copy(0.9f)
+                                      )
+                                  }
+                                  Spacer(Modifier.height(16.dp))
+                                  Button(
+                                      onClick = { if (active) ui.togglePlay() else ui.playQuran(n, 1) },
+                                      colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
+                                  ) {
+                                      Icon(if (active && ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(22.dp))
+                                      Spacer(Modifier.width(6.dp))
+                                      Text(if (active && ui.isPlaying) "إيقاف مؤقت" else "استماع للسورة", fontWeight = FontWeight.Bold)
+                                  }
+                              }
+                          }
+                          itemsIndexed(ls) { i, text ->
+                              val a = i + 1
+                              val on = active && ui.quranAyah == a
+                              val bg by animateColorAsState(if (on) TM.Emerald.copy(alpha = 0.16f) else Color.Transparent, tween(300), label = "ayah-bg")
+                              Text(
+                                  buildAnnotatedString {
+                                      append(text)
+                                      append(" ")
+                                      withStyle(SpanStyle(color = TM.Gold, fontSize = 22.sp)) { append("﴿${Quran.digits(a)}﴾") }
+                                  },
+                                  fontSize = 28.sp, lineHeight = 52.sp, color = if (on) Color.White else TM.Text,
+                                  modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+                                      .clip(RoundedCornerShape(14.dp)).background(bg)
+                                      .clickable { ui.playQuran(n, a) }.padding(14.dp)
+                              )
+                          }
+                      }
+                      failed -> Column(
+                          Modifier.fillMaxSize().padding(32.dp),
+                          horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+                      ) {
+                          Icon(Icons.Rounded.CloudOff, null, Modifier.size(56.dp), tint = TM.Muted)
+                          Spacer(Modifier.height(16.dp))
+                          Text("تعذّر تحميل السورة", style = MaterialTheme.typography.titleMedium)
+                          Spacer(Modifier.height(6.dp))
+                          Text("تأكد من اتصالك بالإنترنت، وبعد التحميل الأول تُحفظ السورة على جهازك.", color = TM.Muted, textAlign = TextAlign.Center)
+                          Spacer(Modifier.height(16.dp))
+                          FilledTonalButton({ attempt++ }) { Text("إعادة المحاولة") }
+                      }
+                      else -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = TM.Emerald) }
+                  }
+              }
+          }
+
+          @Composable
+          fun QuranMiniPlayer(ui: PlayerUi, onOpen: () -> Unit) {
+              val info = Quran.surahs.getOrNull(ui.quranSurah - 1) ?: return
+              val reciter = Quran.reciters[ui.reciterIdx].name
+              Box(
+                  Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)
+                      .clip(RoundedCornerShape(16.dp)).background(Color(0xFF12372E)).clickable(onClick = onOpen)
+              ) {
+                  Row(Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Box(
+                          Modifier.size(44.dp).background(Brush.linearGradient(listOf(Color(0xFF0F5C47), TM.Emerald)), RoundedCornerShape(8.dp)),
+                          contentAlignment = Alignment.Center
+                      ) { Icon(Icons.Rounded.MenuBook, null, tint = Color.White) }
+                      Spacer(Modifier.width(12.dp))
+                      Column(Modifier.weight(1f)) {
+                          Text("سورة ${info.name}", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                          Text(
+                              if (ui.quranAyah > 0) "الآية ${Quran.digits(ui.quranAyah)} • $reciter" else reciter,
+                              maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = Color.White.copy(0.7f)
+                          )
+                      }
+                      IconButton(ui::togglePlay) {
+                          Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(30.dp))
+                      }
+                      IconButton(ui::next) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(28.dp)) }
+                  }
+              }
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/MainActivity.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.Manifest
+          import android.content.pm.PackageManager
+          import android.os.Build
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.SystemBarStyle
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.compose.setContent
+          import androidx.activity.enableEdgeToEdge
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.animation.*
+          import androidx.compose.animation.core.tween
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.runtime.saveable.rememberSaveable
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.dp
+          import androidx.core.content.ContextCompat
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.withContext
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  enableEdgeToEdge(
+                      statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+                      navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                  )
+                  super.onCreate(savedInstanceState)
+                  setContent { TMusicTheme { Surface(Modifier.fillMaxSize(), color = TM.Ink) { Root() } } }
+              }
+          }
+
+          @Composable
+          fun Root() {
+              val ctx = LocalContext.current
+              val audioPerm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+              fun has() = ContextCompat.checkSelfPermission(ctx, audioPerm) == PackageManager.PERMISSION_GRANTED
+              var granted by remember { mutableStateOf(has()) }
+              val ask = remember {
+                  buildList { add(audioPerm); if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS) }.toTypedArray()
+              }
+              val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted = has() }
+              LaunchedEffect(Unit) { if (!granted) launcher.launch(ask) }
+              if (granted) App() else PermissionScreen { launcher.launch(ask) }
+          }
+
+          @Composable
+          fun PermissionScreen(onAllow: () -> Unit) {
+              Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                  Box(
+                      Modifier.size(96.dp).background(Brush.linearGradient(listOf(TM.Violet, TM.Blue)), CircleShape),
+                      contentAlignment = Alignment.Center
+                  ) { Icon(Icons.Rounded.MusicNote, null, Modifier.size(48.dp), tint = Color.White) }
+                  Spacer(Modifier.height(24.dp))
+                  Text("T Music", style = MaterialTheme.typography.headlineMedium)
+                  Spacer(Modifier.height(8.dp))
+                  Text("نحتاج إذن الوصول إلى ملفات الصوت لنعرض أغانيك.", color = TM.Muted, textAlign = TextAlign.Center)
+                  Spacer(Modifier.height(24.dp))
+                  Button(onAllow) { Text("السماح بالوصول") }
+              }
+          }
+
+          @Composable
+          fun App() {
+              val ctx = LocalContext.current
+              var songs by remember { mutableStateOf<List<Song>?>(null) }
+              LaunchedEffect(Unit) { songs = withContext(Dispatchers.IO) { loadSongs(ctx) } }
+
+              val ui = rememberPlayerUi()
+              LaunchedEffect(ui.isPlaying, ui.controller) {
+                  while (ui.isPlaying) { ui.syncPosition(); delay(200) }
+              }
+
+              var tab by rememberSaveable { mutableIntStateOf(0) }
+              var expanded by rememberSaveable { mutableStateOf(false) }
+              var section by rememberSaveable { mutableIntStateOf(0) }      // 0 = T Music، 1 = T Quran
+              var quranOpen by rememberSaveable { mutableIntStateOf(0) }    // رقم السورة المفتوحة، 0 = القائمة
+
+              val list = songs
+              if (list == null) {
+                  Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = TM.Violet) }
+                  return
+              }
+              val byId = remember(list) { list.associateBy { it.id } }
+              val albums = remember(list) { list.toAlbums() }
+              val artists = remember(list) { list.toArtists() }
+              val current = byId[ui.currentId]
+              val miniTint = rememberCoverColor(current, TM.Raised)
+
+              BackHandler(expanded) { expanded = false }
+
+              Box(Modifier.fillMaxSize()) {
+                  Scaffold(
+                      containerColor = TM.Ink,
+                      topBar = { SectionSwitch(section) { section = it } },
+                      bottomBar = {
+                          Column(if (section != 0) Modifier.navigationBarsPadding() else Modifier) {
+                              if (ui.quranSurah != 0) {
+                                  if (!(section == 1 && quranOpen == ui.quranSurah)) QuranMiniPlayer(ui) { section = 1; quranOpen = ui.quranSurah }
+                              } else if (current != null) MiniPlayer(current, ui, miniTint) { expanded = true }
+                              if (section == 0) NavigationBar(containerColor = TM.Ink, tonalElevation = 0.dp) {
+                                  val items = listOf(
+                                      Triple("الرئيسية", Icons.Rounded.Home, 0),
+                                      Triple("بحث", Icons.Rounded.Search, 1),
+                                      Triple("مكتبتي", Icons.Rounded.LibraryMusic, 2)
+                                  )
+                                  items.forEach { (label, icon, i) ->
+                                      NavigationBarItem(
+                                          selected = tab == i, onClick = { tab = i },
+                                          icon = { Icon(icon, null) }, label = { Text(label) },
+                                          colors = NavigationBarItemDefaults.colors(
+                                              selectedIconColor = Color.White, selectedTextColor = Color.White,
+                                              indicatorColor = TM.Violet.copy(alpha = 0.28f),
+                                              unselectedIconColor = TM.Muted, unselectedTextColor = TM.Muted
+                                          )
+                                      )
+                                  }
+                              }
+                          }
+                      }
+                  ) { pad ->
+                      Box(Modifier.padding(pad)) {
+                          if (section == 0) {
+                              when (tab) {
+                                  0 -> HomeTab(list, albums, byId, ui)
+                                  1 -> SearchTab(list, artists, ui)
+                                  else -> LibraryTab(albums, artists, ui)
+                              }
+                          } else QuranTab(ui, quranOpen) { quranOpen = it }
+                      }
+                  }
+
+                  AnimatedVisibility(
+                      visible = expanded && current != null,
+                      enter = slideInVertically(tween(380)) { it } + fadeIn(tween(250)),
+                      exit = slideOutVertically(tween(300)) { it } + fadeOut(tween(250))
+                  ) {
+                      current?.let { NowPlaying(it, ui) { expanded = false } }
+                  }
+              }
+          }
+          TMEOF
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
       - uses: actions/upload-artifact@v4
         with:
           name: TMusic-apk
