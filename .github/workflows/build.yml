@@ -179,10 +179,11 @@ jobs:
 
           data class Song(
               val id: Long, val title: String, val artist: String,
-              val album: String, val albumId: Long, val duration: Long
+              val album: String, val albumId: Long, val duration: Long,
+              val remoteUrl: String? = null, val artUrl: String? = null   // لأغاني الإنترنت فقط
           ) {
-              val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-              val art: Uri get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
+              val uri: Uri get() = remoteUrl?.let { Uri.parse(it) } ?: ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+              val art: Uri get() = artUrl?.let { Uri.parse(it) } ?: ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
           }
 
           fun loadSongs(ctx: Context): List<Song> {
@@ -233,6 +234,8 @@ jobs:
           import android.os.Build
           import android.util.LruCache
           import android.util.Size
+          import java.net.HttpURLConnection
+          import java.net.URL
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.withContext
 
@@ -250,7 +253,12 @@ jobs:
                   if (song.albumId in missing) return null
                   val bmp = withContext(Dispatchers.IO) {
                       try {
-                          if (Build.VERSION.SDK_INT >= 29) ctx.contentResolver.loadThumbnail(song.uri, Size(480, 480), null)
+                          if (song.artUrl != null) {
+                              val c = URL(song.artUrl).openConnection() as HttpURLConnection
+                              c.connectTimeout = 10000; c.readTimeout = 15000
+                              try { c.inputStream.use { BitmapFactory.decodeStream(it) } } finally { c.disconnect() }
+                          }
+                          else if (Build.VERSION.SDK_INT >= 29) ctx.contentResolver.loadThumbnail(song.uri, Size(480, 480), null)
                           else ctx.contentResolver.openInputStream(song.art)?.use { BitmapFactory.decodeStream(it) }
                       } catch (e: Exception) { null }
                   }
@@ -366,6 +374,9 @@ jobs:
               var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
               var recents by mutableStateOf(readRecents())
 
+              /** أغاني الإنترنت التي شُغّلت، لنجد الأغنية الحالية بمعرّفها. */
+              val online = HashMap<Long, Song>()
+
               // قسم القرآن: السورة والآية الجاري تشغيلهما (0 = لا شيء / البسملة)
               var quranSurah by mutableIntStateOf(0)
                   private set
@@ -439,6 +450,7 @@ jobs:
               fun play(list: List<Song>, index: Int, shuffleMode: Boolean? = null) {
                   val c = controller ?: return
                   if (list.isEmpty()) return
+                  list.forEach { if (it.remoteUrl != null) online[it.id] = it }
                   if (shuffleMode != null) c.shuffleModeEnabled = shuffleMode
                   c.setMediaItems(list.map(::item), index.coerceIn(list.indices), 0)
                   c.prepare(); c.play()
@@ -767,17 +779,19 @@ jobs:
 
           @OptIn(ExperimentalMaterial3Api::class)
           @Composable
-          fun SearchTab(songs: List<Song>, artists: List<Artist>, ui: PlayerUi) {
+          fun SearchTab(songs: List<Song>, artists: List<Artist>, ui: PlayerUi, onOpenSurah: (Int) -> Unit) {
               var q by remember { mutableStateOf("") }
               val results = remember(songs, q) {
                   if (q.isBlank()) emptyList()
                   else songs.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
               }
+              val surahHits = remember(q) { Quran.search(q) }
+              val (online, loading) = rememberOnline(q)
               Column(Modifier.fillMaxSize()) {
                   Text("بحث", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
                   TextField(
                       value = q, onValueChange = { q = it }, singleLine = true,
-                      placeholder = { Text("أغنية، فنان، أو ألبوم") },
+                      placeholder = { Text("أغنية، فنان، ألبوم، أو سورة") },
                       leadingIcon = { Icon(Icons.Rounded.Search, null) },
                       trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
                       shape = RoundedCornerShape(14.dp),
@@ -797,10 +811,30 @@ jobs:
                               }
                           }
                       }
-                      results.isEmpty() -> EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم الفنان.")
+                      results.isEmpty() && surahHits.isEmpty() && online.isEmpty() && !loading -> EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم الفنان أو السورة.")
                       else -> LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
-                          itemsIndexed(results, key = { _, s -> s.id }) { i, s ->
-                              SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(results, i) }
+                          if (surahHits.isNotEmpty()) {
+                              item { SectionTitle("السور") }
+                              items(surahHits, key = { "s${it.number}" }) { s ->
+                                  SurahRow(s, ui.quranSurah == s.number, ui.isPlaying) { onOpenSurah(s.number) }
+                              }
+                          }
+                          if (results.isNotEmpty()) {
+                              item { SectionTitle("على جهازك") }
+                              itemsIndexed(results, key = { _, s -> "m${s.id}" }) { i, s ->
+                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(results, i) }
+                              }
+                          }
+                          if (online.isNotEmpty()) {
+                              item { SectionTitle("من الإنترنت") }
+                              itemsIndexed(online, key = { _, s -> "o${s.id}" }) { i, s ->
+                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(online, i) }
+                              }
+                          }
+                          if (loading) item {
+                              Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
+                                  CircularProgressIndicator(color = TM.Violet, modifier = Modifier.size(28.dp))
+                              }
                           }
                       }
                   }
@@ -1162,6 +1196,12 @@ jobs:
                   .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
                   .replace('ة', 'ه').replace('ى', 'ي')
 
+              fun search(q: String): List<SurahInfo> {
+                  val k = normalize(q).removePrefix("سورة").trim()
+                  if (k.isEmpty()) return emptyList()
+                  return surahs.filter { normalize(it.name).contains(k) || it.number.toString() == k }
+              }
+
               /** يحمّل آيات السورة؛ من الذاكرة المحلية إن وُجدت وإلا من الإنترنت ثم يحفظها. */
               suspend fun load(ctx: Context, surah: Int): List<String>? = withContext(Dispatchers.IO) {
                   val expected = counts[surah - 1]
@@ -1261,20 +1301,45 @@ jobs:
 
           /** قسم القرآن كاملًا: قائمة السور، وعند اختيار سورة تُفتح شاشة القراءة. */
           @Composable
-          fun QuranTab(ui: PlayerUi, openSurah: Int, onOpen: (Int) -> Unit) {
+          fun QuranTab(ui: PlayerUi, songs: List<Song>, openSurah: Int, onOpen: (Int) -> Unit) {
               CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                   if (openSurah != 0) SurahReader(openSurah, ui) { onOpen(0) }
-                  else SurahList(ui, onOpen)
+                  else SurahList(ui, songs, onOpen)
               }
           }
 
           @Composable
-          private fun SurahList(ui: PlayerUi, onOpen: (Int) -> Unit) {
+          fun SurahRow(s: SurahInfo, active: Boolean, playing: Boolean, onClick: () -> Unit) {
+              Row(
+                  Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Box(
+                      Modifier.size(44.dp).background(TM.Emerald.copy(alpha = if (active) 0.28f else 0.14f), CircleShape),
+                      contentAlignment = Alignment.Center
+                  ) { Text(Quran.digits(s.number), color = TM.Emerald, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
+                  Spacer(Modifier.width(14.dp))
+                  Column(Modifier.weight(1f)) {
+                      Text(
+                          "سورة ${s.name}", fontWeight = FontWeight.SemiBold, fontSize = 18.sp,
+                          color = if (active) TM.Emerald else TM.Text, maxLines = 1, overflow = TextOverflow.Ellipsis
+                      )
+                      Text("${Quran.digits(s.ayahs)} آية", fontSize = 12.sp, color = TM.Muted)
+                  }
+                  if (active) EqBars(playing, TM.Emerald)
+              }
+          }
+
+          /** قائمة السور؛ والبحث فيها عام: يجد السور والأغاني معًا. */
+          @Composable
+          private fun SurahList(ui: PlayerUi, songs: List<Song>, onOpen: (Int) -> Unit) {
               var q by remember { mutableStateOf("") }
-              val list = remember(q) {
-                  val k = Quran.normalize(q)
-                  if (k.isEmpty()) Quran.surahs
-                  else Quran.surahs.filter { Quran.normalize(it.name).contains(k) || it.number.toString() == k }
+              val surahHits = remember(q) { Quran.search(q) }
+              val (online, loading) = rememberOnline(q)
+              val songHits = remember(songs, q) {
+                  val k = q.trim()
+                  if (k.isEmpty()) emptyList()
+                  else songs.filter { it.title.contains(k, true) || it.artist.contains(k, true) || it.album.contains(k, true) }.take(50)
               }
               Column(Modifier.fillMaxSize()) {
                   Text(
@@ -1283,7 +1348,7 @@ jobs:
                   )
                   TextField(
                       value = q, onValueChange = { q = it }, singleLine = true,
-                      placeholder = { Text("ابحث عن سورة") },
+                      placeholder = { Text("ابحث عن سورة أو أغنية") },
                       leadingIcon = { Icon(Icons.Rounded.Search, null) },
                       trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
                       shape = RoundedCornerShape(14.dp),
@@ -1294,29 +1359,30 @@ jobs:
                       modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                   )
                   Spacer(Modifier.height(8.dp))
-                  if (list.isEmpty()) {
-                      EmptyState(Icons.Rounded.Search, "لا توجد سورة بهذا الاسم", "جرّب كتابة جزء من الاسم أو رقم السورة.")
+                  if (q.isNotBlank() && surahHits.isEmpty() && songHits.isEmpty() && online.isEmpty() && !loading) {
+                      EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم السورة أو الأغنية.")
                   } else {
                       LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
-                          items(list, key = { it.number }) { s ->
-                              val active = ui.quranSurah == s.number
-                              Row(
-                                  Modifier.fillMaxWidth().clickable { onOpen(s.number) }.padding(horizontal = 16.dp, vertical = 8.dp),
-                                  verticalAlignment = Alignment.CenterVertically
-                              ) {
-                                  Box(
-                                      Modifier.size(44.dp).background(TM.Emerald.copy(alpha = if (active) 0.28f else 0.14f), CircleShape),
-                                      contentAlignment = Alignment.Center
-                                  ) { Text(Quran.digits(s.number), color = TM.Emerald, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
-                                  Spacer(Modifier.width(14.dp))
-                                  Column(Modifier.weight(1f)) {
-                                      Text(
-                                          "سورة ${s.name}", fontWeight = FontWeight.SemiBold, fontSize = 18.sp,
-                                          color = if (active) TM.Emerald else TM.Text, maxLines = 1, overflow = TextOverflow.Ellipsis
-                                      )
-                                      Text("${Quran.digits(s.ayahs)} آية", fontSize = 12.sp, color = TM.Muted)
-                                  }
-                                  if (active) EqBars(ui.isPlaying, TM.Emerald)
+                          val surahs = if (q.isBlank()) Quran.surahs else surahHits
+                          if (q.isNotBlank() && surahs.isNotEmpty()) item { SectionTitle("السور") }
+                          items(surahs, key = { "s${it.number}" }) { s ->
+                              SurahRow(s, ui.quranSurah == s.number, ui.isPlaying) { onOpen(s.number) }
+                          }
+                          if (songHits.isNotEmpty()) {
+                              item { SectionTitle("على جهازك") }
+                              itemsIndexed(songHits, key = { _, s -> "m${s.id}" }) { i, s ->
+                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(songHits, i) }
+                              }
+                          }
+                          if (online.isNotEmpty()) {
+                              item { SectionTitle("من الإنترنت") }
+                              itemsIndexed(online, key = { _, s -> "o${s.id}" }) { i, s ->
+                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(online, i) }
+                              }
+                          }
+                          if (loading) item {
+                              Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
+                                  CircularProgressIndicator(color = TM.Emerald, modifier = Modifier.size(28.dp))
                               }
                           }
                       }
@@ -1470,6 +1536,109 @@ jobs:
           }
           TMEOF
           mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Online.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import androidx.compose.runtime.*
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.async
+          import kotlinx.coroutines.coroutineScope
+          import kotlinx.coroutines.delay
+          import org.json.JSONObject
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.Locale
+
+          /** بحث الأغاني على الإنترنت: Audius (أغانٍ كاملة) و iTunes (معاينة 30 ثانية). */
+          object Online {
+              /** معرّف سالب ثابت لكل أغنية إنترنت حتى لا يتعارض مع معرّفات أغاني الجهاز. */
+              private fun rid(key: String): Long = -((key.hashCode().toLong() and 0x7fffffffL) + 1)
+
+              private fun get(url: String): String {
+                  val c = URL(url).openConnection() as HttpURLConnection
+                  c.connectTimeout = 10000
+                  c.readTimeout = 15000
+                  c.setRequestProperty("Accept", "application/json")
+                  return try {
+                      c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                  } finally {
+                      c.disconnect()
+                  }
+              }
+
+              suspend fun search(q: String): List<Song> = coroutineScope {
+                  val a = async(Dispatchers.IO) { runCatching { audius(q) }.getOrDefault(emptyList()) }
+                  val b = async(Dispatchers.IO) { runCatching { itunes(q) }.getOrDefault(emptyList()) }
+                  a.await() + b.await()
+              }
+
+              private fun audius(q: String): List<Song> {
+                  val e = URLEncoder.encode(q, "UTF-8")
+                  val arr = JSONObject(get("https://api.audius.co/v1/tracks/search?query=$e&limit=20&app_name=TMusic")).getJSONArray("data")
+                  val out = ArrayList<Song>()
+                  for (i in 0 until arr.length()) {
+                      val t = arr.getJSONObject(i)
+                      if (!t.optBoolean("is_streamable", true)) continue
+                      val tid = t.getString("id")
+                      val aw = t.optJSONObject("artwork")
+                      val art = aw?.optString("480x480")?.takeIf { it.isNotEmpty() }
+                          ?: aw?.optString("150x150")?.takeIf { it.isNotEmpty() }
+                      val id = rid("audius:$tid")
+                      out += Song(
+                          id, t.optString("title", "بدون عنوان"),
+                          t.optJSONObject("user")?.optString("name") ?: "فنان غير معروف",
+                          "Audius", id, t.optLong("duration", 0L) * 1000,
+                          "https://api.audius.co/v1/tracks/$tid/stream?app_name=TMusic", art
+                      )
+                  }
+                  return out
+              }
+
+              private fun itunes(q: String): List<Song> {
+                  val e = URLEncoder.encode(q, "UTF-8")
+                  val base = "https://itunes.apple.com/search?term=$e&media=music&entity=song&limit=20"
+                  val country = Locale.getDefault().country
+                  val body = try {
+                      get(if (country.length == 2) "$base&country=$country" else base)
+                  } catch (ex: Exception) {
+                      get(base)
+                  }
+                  val arr = JSONObject(body).getJSONArray("results")
+                  val out = ArrayList<Song>()
+                  for (i in 0 until arr.length()) {
+                      val t = arr.getJSONObject(i)
+                      val prev = t.optString("previewUrl")
+                      if (prev.isEmpty()) continue
+                      val id = rid("itunes:${t.optLong("trackId")}")
+                      out += Song(
+                          id, t.optString("trackName", "بدون عنوان"), t.optString("artistName", "فنان غير معروف"),
+                          "معاينة ٣٠ ثانية • Apple Music", id, 30000L, prev,
+                          t.optString("artworkUrl100").replace("100x100", "400x400").takeIf { it.isNotEmpty() }
+                      )
+                  }
+                  return out
+              }
+          }
+
+          /** نتائج البحث على الإنترنت للنص q (بعد انتظار نصف ثانية من آخر حرف)، ومعها حالة التحميل. */
+          @Composable
+          fun rememberOnline(q: String): Pair<List<Song>, Boolean> {
+              var res by remember { mutableStateOf<List<Song>>(emptyList()) }
+              var loading by remember { mutableStateOf(false) }
+              LaunchedEffect(q) {
+                  val k = q.trim()
+                  res = emptyList()
+                  if (k.length < 2) { loading = false; return@LaunchedEffect }
+                  loading = true
+                  delay(500)
+                  res = Online.search(k)
+                  loading = false
+              }
+              return res to loading
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
           cat > app/src/main/java/com/tmusic/app/MainActivity.kt <<'TMEOF'
           package com.tmusic.app
 
@@ -1571,7 +1740,7 @@ jobs:
               val byId = remember(list) { list.associateBy { it.id } }
               val albums = remember(list) { list.toAlbums() }
               val artists = remember(list) { list.toArtists() }
-              val current = byId[ui.currentId]
+              val current = byId[ui.currentId] ?: ui.online[ui.currentId]
               val miniTint = rememberCoverColor(current, TM.Raised)
 
               BackHandler(expanded) { expanded = false }
@@ -1610,10 +1779,10 @@ jobs:
                           if (section == 0) {
                               when (tab) {
                                   0 -> HomeTab(list, albums, byId, ui)
-                                  1 -> SearchTab(list, artists, ui)
+                                  1 -> SearchTab(list, artists, ui) { section = 1; quranOpen = it }
                                   else -> LibraryTab(albums, artists, ui)
                               }
-                          } else QuranTab(ui, quranOpen) { quranOpen = it }
+                          } else QuranTab(ui, list, quranOpen) { quranOpen = it }
                       }
                   }
 
