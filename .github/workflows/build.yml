@@ -880,6 +880,7 @@ jobs:
           import androidx.compose.ui.unit.sp
           import androidx.media3.common.Player
 
+          @OptIn(ExperimentalMaterial3Api::class)
           @Composable
           fun NowPlaying(song: Song, ui: PlayerUi, onClose: () -> Unit) {
               val ctx = LocalContext.current
