@@ -689,6 +689,9 @@ jobs:
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.style.TextOverflow
           import androidx.compose.ui.unit.dp
+          import androidx.compose.foundation.text.KeyboardActions
+          import androidx.compose.foundation.text.KeyboardOptions
+          import androidx.compose.ui.text.input.ImeAction
           import androidx.compose.ui.unit.sp
           import java.util.Calendar
 
@@ -779,18 +782,24 @@ jobs:
 
           @OptIn(ExperimentalMaterial3Api::class)
           @Composable
-          fun SearchTab(songs: List<Song>, artists: List<Artist>, ui: PlayerUi, onOpenSurah: (Int) -> Unit) {
+          fun SearchTab(songs: List<Song>, artists: List<Artist>, ui: PlayerUi, onOpenSurah: (Int) -> Unit, onYoutube: (YtVideo) -> Unit) {
               var q by remember { mutableStateOf("") }
               val results = remember(songs, q) {
                   if (q.isBlank()) emptyList()
                   else songs.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
               }
               val surahHits = remember(q) { Quran.search(q) }
-              val (online, loading) = rememberOnline(q)
+              val (online, loading0) = rememberOnline(q)
+              var submitted by remember { mutableStateOf("") }
+              LaunchedEffect(q) { if (q.isBlank()) submitted = "" else { kotlinx.coroutines.delay(900); submitted = q.trim() } }
+              val (yt, ytLoading) = rememberYoutube(submitted)
+              val loading = loading0 || ytLoading
               Column(Modifier.fillMaxSize()) {
                   Text("بحث", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
                   TextField(
                       value = q, onValueChange = { q = it }, singleLine = true,
+                      keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                      keyboardActions = KeyboardActions(onSearch = { submitted = q.trim() }),
                       placeholder = { Text("أغنية، فنان، ألبوم، أو سورة") },
                       leadingIcon = { Icon(Icons.Rounded.Search, null) },
                       trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
@@ -811,8 +820,11 @@ jobs:
                               }
                           }
                       }
-                      results.isEmpty() && surahHits.isEmpty() && online.isEmpty() && !loading -> EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم الفنان أو السورة.")
+                      results.isEmpty() && surahHits.isEmpty() && online.isEmpty() && yt.isEmpty() && !loading -> EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم الفنان أو السورة." + (if (!Online.ytReady) " لنتائج يوتيوب أضف المفتاح في Online.kt." else if (submitted != q.trim()) " اضغط زر البحث في لوحة المفاتيح لنتائج يوتيوب." else ""))
                       else -> LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
+                          if (Online.ytReady && q.isNotBlank() && submitted != q.trim()) item {
+                              Text("اضغط زر البحث في لوحة المفاتيح لعرض نتائج يوتيوب", color = TM.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                          }
                           if (surahHits.isNotEmpty()) {
                               item { SectionTitle("السور") }
                               items(surahHits, key = { "s${it.number}" }) { s ->
@@ -824,6 +836,10 @@ jobs:
                               itemsIndexed(results, key = { _, s -> "m${s.id}" }) { i, s ->
                                   SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(results, i) }
                               }
+                          }
+                          if (yt.isNotEmpty()) {
+                              item { SectionTitle("من يوتيوب") }
+                              items(yt, key = { "y${it.id}" }) { v -> YtRow(v) { onYoutube(v) } }
                           }
                           if (online.isNotEmpty()) {
                               item { SectionTitle("من الإنترنت") }
@@ -1272,6 +1288,9 @@ jobs:
           import androidx.compose.ui.text.withStyle
           import androidx.compose.ui.unit.LayoutDirection
           import androidx.compose.ui.unit.dp
+          import androidx.compose.foundation.text.KeyboardActions
+          import androidx.compose.foundation.text.KeyboardOptions
+          import androidx.compose.ui.text.input.ImeAction
           import androidx.compose.ui.unit.sp
 
           /** مبدّل الأقسام العلوي: T Music | T Quran */
@@ -1301,10 +1320,10 @@ jobs:
 
           /** قسم القرآن كاملًا: قائمة السور، وعند اختيار سورة تُفتح شاشة القراءة. */
           @Composable
-          fun QuranTab(ui: PlayerUi, songs: List<Song>, openSurah: Int, onOpen: (Int) -> Unit) {
+          fun QuranTab(ui: PlayerUi, songs: List<Song>, openSurah: Int, onYoutube: (YtVideo) -> Unit, onOpen: (Int) -> Unit) {
               CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                   if (openSurah != 0) SurahReader(openSurah, ui) { onOpen(0) }
-                  else SurahList(ui, songs, onOpen)
+                  else SurahList(ui, songs, onYoutube, onOpen)
               }
           }
 
@@ -1332,10 +1351,14 @@ jobs:
 
           /** قائمة السور؛ والبحث فيها عام: يجد السور والأغاني معًا. */
           @Composable
-          private fun SurahList(ui: PlayerUi, songs: List<Song>, onOpen: (Int) -> Unit) {
+          private fun SurahList(ui: PlayerUi, songs: List<Song>, onYoutube: (YtVideo) -> Unit, onOpen: (Int) -> Unit) {
               var q by remember { mutableStateOf("") }
               val surahHits = remember(q) { Quran.search(q) }
-              val (online, loading) = rememberOnline(q)
+              val (online, loading0) = rememberOnline(q)
+              var submitted by remember { mutableStateOf("") }
+              LaunchedEffect(q) { if (q.isBlank()) submitted = "" else { kotlinx.coroutines.delay(900); submitted = q.trim() } }
+              val (yt, ytLoading) = rememberYoutube(submitted)
+              val loading = loading0 || ytLoading
               val songHits = remember(songs, q) {
                   val k = q.trim()
                   if (k.isEmpty()) emptyList()
@@ -1348,6 +1371,8 @@ jobs:
                   )
                   TextField(
                       value = q, onValueChange = { q = it }, singleLine = true,
+                      keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                      keyboardActions = KeyboardActions(onSearch = { submitted = q.trim() }),
                       placeholder = { Text("ابحث عن سورة أو أغنية") },
                       leadingIcon = { Icon(Icons.Rounded.Search, null) },
                       trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
@@ -1359,10 +1384,13 @@ jobs:
                       modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                   )
                   Spacer(Modifier.height(8.dp))
-                  if (q.isNotBlank() && surahHits.isEmpty() && songHits.isEmpty() && online.isEmpty() && !loading) {
-                      EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم السورة أو الأغنية.")
+                  if (q.isNotBlank() && surahHits.isEmpty() && songHits.isEmpty() && online.isEmpty() && yt.isEmpty() && !loading) {
+                      EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم السورة أو الأغنية." + (if (!Online.ytReady) " لنتائج يوتيوب أضف المفتاح في Online.kt." else if (submitted != q.trim()) " اضغط زر البحث في لوحة المفاتيح لنتائج يوتيوب." else ""))
                   } else {
                       LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
+                          if (Online.ytReady && q.isNotBlank() && submitted != q.trim()) item {
+                              Text("اضغط زر البحث في لوحة المفاتيح لعرض نتائج يوتيوب", color = TM.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                          }
                           val surahs = if (q.isBlank()) Quran.surahs else surahHits
                           if (q.isNotBlank() && surahs.isNotEmpty()) item { SectionTitle("السور") }
                           items(surahs, key = { "s${it.number}" }) { s ->
@@ -1373,6 +1401,10 @@ jobs:
                               itemsIndexed(songHits, key = { _, s -> "m${s.id}" }) { i, s ->
                                   SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(songHits, i) }
                               }
+                          }
+                          if (yt.isNotEmpty()) {
+                              item { SectionTitle("من يوتيوب") }
+                              items(yt, key = { "y${it.id}" }) { v -> YtRow(v) { onYoutube(v) } }
                           }
                           if (online.isNotEmpty()) {
                               item { SectionTitle("من الإنترنت") }
@@ -1544,13 +1576,26 @@ jobs:
           import kotlinx.coroutines.async
           import kotlinx.coroutines.coroutineScope
           import kotlinx.coroutines.delay
+          import kotlinx.coroutines.withContext
+          import org.json.JSONArray
           import org.json.JSONObject
           import java.net.HttpURLConnection
           import java.net.URL
           import java.net.URLEncoder
 
           /** بحث الأغاني على الإنترنت: Audius و Jamendo (أغانٍ كاملة). */
+          data class YtVideo(val id: String, val title: String, val channel: String)
+
           object Online {
+              /** مفتاح YouTube Data API v3 (مجاني من Google Cloud). بدونه لا تظهر نتائج يوتيوب. */
+              const val YT_KEY = "PUT_KEY_HERE"
+              /** رابط Cloudflare Worker (اختياري): يخفي المفتاح ويخزّن النتائج فيشترك الأصدقاء في الحصة. */
+              const val YT_PROXY = ""
+              val ytReady: Boolean get() = true   // بدون مفتاح يعمل البحث المجاني المباشر
+              private val keySet: Boolean get() = YT_KEY.isNotBlank() && YT_KEY != "PUT_KEY_HERE"
+              private val ytCache = HashMap<String, List<YtVideo>>()
+              private fun clean(t: String) = android.text.Html.fromHtml(t, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
+
               /** معرّف سالب ثابت لكل أغنية إنترنت حتى لا يتعارض مع معرّفات أغاني الجهاز. */
               private fun rid(key: String): Long = -((key.hashCode().toLong() and 0x7fffffffL) + 1)
 
@@ -1570,6 +1615,74 @@ jobs:
                   val a = async(Dispatchers.IO) { runCatching { audius(q) }.getOrDefault(emptyList()) }
                   val b = async(Dispatchers.IO) { runCatching { jamendo(q) }.getOrDefault(emptyList()) }
                   a.await() + b.await()
+              }
+
+              /** بحث يوتيوب الرسمي (فيديوهات الموسيقى القابلة للتضمين فقط). */
+              suspend fun youtube(q: String): List<YtVideo> = withContext(Dispatchers.IO) {
+                  val key = q.trim().lowercase()
+                  ytCache[key]?.let { return@withContext it }
+                  val e = URLEncoder.encode(q, "UTF-8")
+                  var out: List<YtVideo> = emptyList()
+                  // 1) Worker الخاص بك (اختياري)  2) مفتاح رسمي (اختياري)  3) البحث المجاني المباشر بلا مفتاح ولا حصة
+                  if (YT_PROXY.isNotBlank()) out = runCatching {
+                      val arr = JSONArray(get("$YT_PROXY?q=$e"))
+                      (0 until arr.length()).map { i ->
+                          val o = arr.getJSONObject(i)
+                          YtVideo(o.getString("id"), clean(o.optString("title")), o.optString("channel"))
+                      }
+                  }.getOrDefault(emptyList())
+                  if (out.isEmpty() && keySet) out = runCatching {
+                      val arr = JSONObject(
+                          get("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&videoEmbeddable=true&maxResults=15&q=$e&key=$YT_KEY")
+                      ).getJSONArray("items")
+                      (0 until arr.length()).map { i ->
+                          val o = arr.getJSONObject(i)
+                          val sn = o.getJSONObject("snippet")
+                          YtVideo(o.getJSONObject("id").getString("videoId"), clean(sn.optString("title")), sn.optString("channelTitle"))
+                      }
+                  }.getOrDefault(emptyList())
+                  if (out.isEmpty()) out = runCatching { innertube(q) }.getOrDefault(emptyList())
+                  if (out.isNotEmpty()) ytCache[key] = out
+                  out
+              }
+
+              /** بحث يوتيوب المباشر (نفس ما يستعمله موقعه) — مجاني بلا مفتاح؛ التشغيل يبقى عبر المشغّل الرسمي. */
+              private fun innertube(q: String): List<YtVideo> {
+                  val body = JSONObject()
+                      .put("context", JSONObject().put("client", JSONObject().put("clientName", "WEB").put("clientVersion", "2.20250101.00.00").put("hl", "ar")))
+                      .put("query", q)
+                      .put("params", "EgIQAQ==")
+                      .toString()
+                  val c = URL("https://www.youtube.com/youtubei/v1/search?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false")
+                      .openConnection() as HttpURLConnection
+                  c.requestMethod = "POST"
+                  c.doOutput = true
+                  c.connectTimeout = 10000
+                  c.readTimeout = 15000
+                  c.setRequestProperty("Content-Type", "application/json")
+                  c.setRequestProperty("Accept-Language", "ar,en;q=0.8")
+                  c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36")
+                  val resp = try {
+                      c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                      c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                  } finally {
+                      c.disconnect()
+                  }
+                  val sections = JSONObject(resp).getJSONObject("contents").getJSONObject("twoColumnSearchResultsRenderer")
+                      .getJSONObject("primaryContents").getJSONObject("sectionListRenderer").getJSONArray("contents")
+                  val out = ArrayList<YtVideo>()
+                  for (i in 0 until sections.length()) {
+                      val items = sections.getJSONObject(i).optJSONObject("itemSectionRenderer")?.optJSONArray("contents") ?: continue
+                      for (j in 0 until items.length()) {
+                          val v = items.getJSONObject(j).optJSONObject("videoRenderer") ?: continue
+                          val id = v.optString("videoId")
+                          if (id.isEmpty()) continue
+                          val title = v.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: continue
+                          val ch = v.optJSONObject("ownerText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: ""
+                          out += YtVideo(id, title, ch)
+                      }
+                  }
+                  return out.take(20)
               }
 
               private fun audius(q: String): List<Song> {
@@ -1630,6 +1743,107 @@ jobs:
                   loading = false
               }
               return res to loading
+          }
+
+          @Composable
+          fun rememberYoutube(q: String): Pair<List<YtVideo>, Boolean> {
+              var res by remember { mutableStateOf<List<YtVideo>>(emptyList()) }
+              var loading by remember { mutableStateOf(false) }
+              LaunchedEffect(q) {
+                  val k = q.trim()
+                  res = emptyList()
+                  if (k.length < 2) { loading = false; return@LaunchedEffect }
+                  loading = true
+                  res = Online.youtube(k)
+                  loading = false
+              }
+              return res to loading
+          }
+          TMEOF
+          mkdir -p app/src/main/java/com/tmusic/app
+          cat > app/src/main/java/com/tmusic/app/Youtube.kt <<'TMEOF'
+          package com.tmusic.app
+
+          import android.annotation.SuppressLint
+          import android.content.Intent
+          import android.net.Uri
+          import androidx.compose.ui.platform.LocalContext
+          import android.webkit.WebView
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.rounded.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.compose.ui.viewinterop.AndroidView
+          import androidx.compose.ui.window.Dialog
+          import androidx.compose.ui.window.DialogProperties
+
+          @Composable
+          fun YtRow(v: YtVideo, onClick: () -> Unit) {
+              Row(
+                  Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 7.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Box(
+                      Modifier.size(52.dp).background(Brush.linearGradient(listOf(Color(0xFFB3261E), Color(0xFF4A0F0C))), RoundedCornerShape(8.dp)),
+                      contentAlignment = Alignment.Center
+                  ) { Icon(Icons.Rounded.PlayArrow, null, tint = Color.White) }
+                  Spacer(Modifier.width(14.dp))
+                  Column(Modifier.weight(1f)) {
+                      Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                      Text(v.channel, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = TM.Muted)
+                  }
+              }
+          }
+
+          /** تشغيل الأغنية الكاملة عبر مشغّل يوتيوب الرسمي المضمّن (يتوقف عند الإغلاق). */
+          @SuppressLint("SetJavaScriptEnabled")
+          @Composable
+          fun YoutubeDialog(v: YtVideo, onClose: () -> Unit) {
+              Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                  Column(Modifier.fillMaxSize().background(TM.Ink).systemBarsPadding()) {
+                      Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                          IconButton(onClose) { Icon(Icons.Rounded.Close, null) }
+                          Text(v.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                      }
+                      AndroidView(
+                          factory = { ctx ->
+                              WebView(ctx).apply {
+                                  setBackgroundColor(android.graphics.Color.BLACK)
+                                  settings.javaScriptEnabled = true
+                                  settings.domStorageEnabled = true
+                                  settings.mediaPlaybackRequiresUserGesture = false
+                                  loadUrl(
+                                      "https://www.youtube.com/embed/${v.id}?autoplay=1&playsinline=1&rel=0",
+                                      mapOf("Referer" to "https://com.tmusic.app")
+                                  )
+                              }
+                          },
+                          onRelease = { it.loadUrl("about:blank"); it.destroy() },
+                          modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                      )
+                      Text(
+                          "يُشغَّل عبر مشغّل يوتيوب الرسمي، ويتوقف عند إغلاق هذه النافذة.",
+                          color = TM.Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)
+                      )
+                      val ctx = LocalContext.current
+                      TextButton(
+                          { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=${v.id}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                          Modifier.padding(horizontal = 8.dp)
+                      ) { Text("إن ظهر خطأ في التشغيل: افتحها في يوتيوب") }
+                  }
+              }
           }
           TMEOF
           mkdir -p app/src/main/java/com/tmusic/app
@@ -1723,6 +1937,7 @@ jobs:
 
               var tab by rememberSaveable { mutableIntStateOf(0) }
               var expanded by rememberSaveable { mutableStateOf(false) }
+              var yt by remember { mutableStateOf<YtVideo?>(null) }
               var section by rememberSaveable { mutableIntStateOf(0) }      // 0 = T Music، 1 = T Quran
               var quranOpen by rememberSaveable { mutableIntStateOf(0) }    // رقم السورة المفتوحة، 0 = القائمة
 
@@ -1773,10 +1988,10 @@ jobs:
                           if (section == 0) {
                               when (tab) {
                                   0 -> HomeTab(list, albums, byId, ui)
-                                  1 -> SearchTab(list, artists, ui) { section = 1; quranOpen = it }
+                                  1 -> SearchTab(list, artists, ui, onOpenSurah = { section = 1; quranOpen = it }) { ui.controller?.pause(); yt = it }
                                   else -> LibraryTab(albums, artists, ui)
                               }
-                          } else QuranTab(ui, list, quranOpen) { quranOpen = it }
+                          } else QuranTab(ui, list, quranOpen, onYoutube = { ui.controller?.pause(); yt = it }) { quranOpen = it }
                       }
                   }
 
@@ -1787,6 +2002,7 @@ jobs:
                   ) {
                       current?.let { NowPlaying(it, ui) { expanded = false } }
                   }
+                  yt?.let { YoutubeDialog(it) { yt = null } }
               }
           }
           TMEOF
