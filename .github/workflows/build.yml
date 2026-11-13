@@ -22,2278 +22,529 @@ jobs:
         with:
           gradle-version: 8.9
 
-      - name: Generate project files
+      - name: Unpack project from this file
         run: |
-          cat > settings.gradle.kts <<'TMEOF'
-          pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
-          }
-          dependencyResolutionManagement {
-              repositories { google(); mavenCentral() }
-          }
-          rootProject.name = "TMusic"
-          include(":app")
-          TMEOF
-          cat > build.gradle.kts <<'TMEOF'
-          plugins {
-              id("com.android.application") version "8.7.3" apply false
-              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
-          }
-          TMEOF
-          cat > gradle.properties <<'TMEOF'
-          android.useAndroidX=true
-          org.gradle.jvmargs=-Xmx3g
-          kotlin.code.style=official
-          TMEOF
-          cat > .gitignore <<'TMEOF'
-          .gradle/
-          build/
-          local.properties
-          .idea/
-          *.iml
-          TMEOF
-          mkdir -p app
-          cat > app/build.gradle.kts <<'TMEOF'
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-              id("org.jetbrains.kotlin.plugin.compose")
-          }
-
-          android {
-              namespace = "com.tmusic.app"
-              compileSdk = 35
-              defaultConfig {
-                  applicationId = "com.tmusic.app"
-                  minSdk = 24
-                  targetSdk = 35
-                  versionCode = 1
-                  versionName = "1.0"
-              }
-              buildFeatures { compose = true }
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-              kotlinOptions { jvmTarget = "17" }
-          }
-
-          dependencies {
-              implementation("androidx.core:core-ktx:1.15.0")
-              implementation("androidx.activity:activity-compose:1.9.3")
-              implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-              implementation("androidx.compose.ui:ui")
-              implementation("androidx.compose.material3:material3")
-              implementation("androidx.compose.material:material-icons-extended")
-              implementation("androidx.media3:media3-exoplayer:1.5.0")
-              implementation("androidx.media3:media3-session:1.5.0")
-              implementation("androidx.palette:palette-ktx:1.0.0")
-          }
-          TMEOF
-          mkdir -p app/src/main
-          cat > app/src/main/AndroidManifest.xml <<'TMEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-              <application
-                  android:allowBackup="true"
-                  android:label="T Music"
-                  android:supportsRtl="true"
-                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  <activity android:name=".MainActivity" android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-                  <service
-                      android:name=".PlaybackService"
-                      android:exported="true"
-                      android:foregroundServiceType="mediaPlayback">
-                      <intent-filter>
-                          <action android:name="androidx.media3.session.MediaSessionService" />
-                      </intent-filter>
-                  </service>
-              </application>
-          </manifest>
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Theme.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import androidx.compose.material3.MaterialTheme
-          import androidx.compose.material3.Typography
-          import androidx.compose.material3.darkColorScheme
-          import androidx.compose.runtime.Composable
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.text.TextStyle
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.unit.sp
-
-          object TM {
-              val Ink = Color(0xFF0C0C11)
-              val Surface = Color(0xFF15151C)
-              val Raised = Color(0xFF1F1F29)
-              val Violet = Color(0xFF9C6BFF)
-              val VioletSoft = Color(0xFFB794FF)
-              val Blue = Color(0xFF6E8BFF)
-              val Emerald = Color(0xFF3DDBA0)
-              val Gold = Color(0xFFE2B86B)
-              val Text = Color(0xFFF2F0FA)
-              val Muted = Color(0xFFA6A3B8)
-          }
-
-          @Composable
-          fun TMusicTheme(content: @Composable () -> Unit) {
-              MaterialTheme(
-                  colorScheme = darkColorScheme(
-                      primary = TM.Violet, onPrimary = Color.Black,
-                      background = TM.Ink, onBackground = TM.Text,
-                      surface = TM.Surface, onSurface = TM.Text,
-                      surfaceVariant = TM.Raised, onSurfaceVariant = TM.Muted
-                  ),
-                  typography = Typography(
-                      headlineMedium = TextStyle(fontWeight = FontWeight.ExtraBold, fontSize = 30.sp),
-                      titleLarge = TextStyle(fontWeight = FontWeight.Bold, fontSize = 22.sp),
-                      titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
-                      bodyMedium = TextStyle(fontSize = 14.sp),
-                      bodySmall = TextStyle(fontSize = 12.sp)
-                  ),
-                  content = content
-              )
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Song.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.content.ContentUris
-          import android.content.Context
-          import android.net.Uri
-          import android.provider.MediaStore
-
-          data class Song(
-              val id: Long, val title: String, val artist: String,
-              val album: String, val albumId: Long, val duration: Long,
-              val remoteUrl: String? = null, val artUrl: String? = null,   // لأغاني الإنترنت فقط
-              val downloadUrl: String? = null                              // رابط التنزيل المرخّص إن وُجد
-          ) {
-              val uri: Uri get() = remoteUrl?.let { Uri.parse(it) } ?: ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-              val art: Uri get() = artUrl?.let { Uri.parse(it) } ?: ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
-          }
-
-          fun loadSongs(ctx: Context): List<Song> {
-              val out = mutableListOf<Song>()
-              val cols = arrayOf(
-                  MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
-                  MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DURATION
-              )
-              val sel = "${MediaStore.Audio.Media.IS_MUSIC}!=0 AND ${MediaStore.Audio.Media.DURATION}>30000"
-              ctx.contentResolver.query(
-                  MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cols, sel, null,
-                  "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE"
-              )?.use { c ->
-                  while (c.moveToNext()) out += Song(
-                      c.getLong(0), c.getString(1) ?: "بدون عنوان", c.getString(2) ?: "فنان غير معروف",
-                      c.getString(3) ?: "", c.getLong(4), c.getLong(5)
-                  )
-              }
-              return out
-          }
-
-          data class Album(val id: Long, val name: String, val artist: String, val songs: List<Song>)
-          data class Artist(val name: String, val songs: List<Song>)
-
-          fun List<Song>.toAlbums(): List<Album> = groupBy { it.albumId }.map { (id, s) ->
-              val artists = s.map { it.artist }.distinct()
-              Album(
-                  id, s.first().album.ifBlank { "ألبوم غير معروف" },
-                  if (artists.size == 1) artists[0] else "فنانون مختلفون", s
-              )
-          }.sortedBy { it.name.lowercase() }
-
-          fun List<Song>.toArtists(): List<Artist> =
-              groupBy { it.artist }.map { (n, s) -> Artist(n, s) }.sortedByDescending { it.songs.size }
-
-          fun fmt(ms: Long): String {
-              val s = (ms / 1000).coerceAtLeast(0)
-              return String.format(java.util.Locale.US, "%d:%02d", s / 60, s % 60)
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Art.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.content.Context
-          import android.graphics.Bitmap
-          import android.graphics.BitmapFactory
-          import android.os.Build
-          import android.util.LruCache
-          import android.util.Size
-          import java.net.HttpURLConnection
-          import java.net.URL
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.withContext
-
-          /** يحمّل أغلفة الألبومات بطريقة تعمل على كل إصدارات أندرويد، مع ذاكرة مؤقتة. */
-          object Art {
-              private val cache = object : LruCache<Long, Bitmap>(32 * 1024) {
-                  override fun sizeOf(key: Long, value: Bitmap) = value.byteCount / 1024
-              }
-              private val missing = HashSet<Long>()
-              private val remoteCache = object : LruCache<String, Bitmap>(16 * 1024) {
-                  override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
-              }
-
-              /** صورة من رابط (مصغّرات يوتيوب مثلًا) مع ذاكرة مؤقتة. */
-              suspend fun remote(url: String): Bitmap? {
-                  remoteCache.get(url)?.let { return it }
-                  val b = withContext(Dispatchers.IO) {
-                      try {
-                          val c = URL(url).openConnection() as HttpURLConnection
-                          c.connectTimeout = 10000; c.readTimeout = 15000
-                          try { c.inputStream.use { BitmapFactory.decodeStream(it) } } finally { c.disconnect() }
-                      } catch (e: Exception) { null }
-                  }
-                  if (b != null) remoteCache.put(url, b)
-                  return b
-              }
-
-              fun peek(albumId: Long): Bitmap? = cache.get(albumId)
-
-              suspend fun get(ctx: Context, song: Song): Bitmap? {
-                  cache.get(song.albumId)?.let { return it }
-                  if (song.albumId in missing) return null
-                  val bmp = withContext(Dispatchers.IO) {
-                      try {
-                          if (song.artUrl != null) {
-                              val c = URL(song.artUrl).openConnection() as HttpURLConnection
-                              c.connectTimeout = 10000; c.readTimeout = 15000
-                              try { c.inputStream.use { BitmapFactory.decodeStream(it) } } finally { c.disconnect() }
-                          }
-                          else if (Build.VERSION.SDK_INT >= 29) ctx.contentResolver.loadThumbnail(song.uri, Size(480, 480), null)
-                          else ctx.contentResolver.openInputStream(song.art)?.use { BitmapFactory.decodeStream(it) }
-                      } catch (e: Exception) { null }
-                  }
-                  if (bmp != null) cache.put(song.albumId, bmp) else missing.add(song.albumId)
-                  return bmp
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Lyrics.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.content.Context
-          import java.io.File
-
-          data class LyricLine(val timeMs: Long, val text: String)
-          data class Lyrics(val lines: List<LyricLine>, val synced: Boolean)
-
-          private val TS = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
-
-          /** يقرأ تنسيق LRC المتزامن، وإن لم تكن فيه أوقات يعرض النص كما هو. */
-          fun parseLyrics(raw: String): Lyrics {
-              val timed = mutableListOf<LyricLine>()
-              val plain = mutableListOf<LyricLine>()
-              for (line in raw.replace("\r", "").lines()) {
-                  val stamps = TS.findAll(line).toList()
-                  val text = TS.replace(line, "").trim()
-                  val t = line.trim()
-                  if (stamps.isNotEmpty()) {
-                      stamps.forEach { m ->
-                          val f = m.groupValues[3]
-                          val ms = when (f.length) { 0 -> 0; 1 -> f.toInt() * 100; 2 -> f.toInt() * 10; else -> f.take(3).toInt() }
-                          timed += LyricLine(
-                              m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms,
-                              text.ifEmpty { "♪" }
-                          )
-                      }
-                  } else if (!(t.startsWith("[") && t.endsWith("]") && t.contains(":"))) {
-                      plain += LyricLine(0, t)
-                  }
-              }
-              return if (timed.isNotEmpty()) Lyrics(timed.sortedBy { it.timeMs }, true)
-              else Lyrics(plain.dropWhile { it.text.isEmpty() }, false)
-          }
-
-          object LyricsStore {
-              private fun file(ctx: Context, id: Long) =
-                  File(File(ctx.filesDir, "lyrics").apply { mkdirs() }, "$id.txt")
-
-              fun load(ctx: Context, id: Long): Lyrics? =
-                  file(ctx, id).takeIf { it.exists() }?.readText()?.let(::parseLyrics)?.takeIf { it.lines.isNotEmpty() }
-
-              fun save(ctx: Context, id: Long, raw: String) = file(ctx, id).writeText(raw)
-              fun delete(ctx: Context, id: Long) { file(ctx, id).delete() }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/PlaybackService.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import androidx.media3.common.AudioAttributes
-          import androidx.media3.exoplayer.ExoPlayer
-          import androidx.media3.session.MediaSession
-          import androidx.media3.session.MediaSessionService
-
-          class PlaybackService : MediaSessionService() {
-              private var session: MediaSession? = null
-
-              override fun onCreate() {
-                  super.onCreate()
-                  val player = ExoPlayer.Builder(this)
-                      .setAudioAttributes(AudioAttributes.DEFAULT, true)
-                      .setHandleAudioBecomingNoisy(true)
-                      .build()
-                  session = MediaSession.Builder(this, player).build()
-              }
-
-              override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
-
-              override fun onDestroy() {
-                  session?.run { player.release(); release() }
-                  session = null
-                  super.onDestroy()
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/PlayerUi.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.content.ComponentName
-          import android.content.Context
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.platform.LocalContext
-          import androidx.core.content.ContextCompat
-          import androidx.media3.common.MediaItem
-          import androidx.media3.common.MediaMetadata
-          import androidx.media3.common.Player
-          import androidx.media3.session.MediaController
-          import androidx.media3.session.SessionToken
-
-          @Stable
-          class PlayerUi(ctx: Context) {
-              private val prefs = ctx.getSharedPreferences("tm", Context.MODE_PRIVATE)
-
-              var controller by mutableStateOf<MediaController?>(null)
-                  private set
-              var currentId by mutableLongStateOf(-1L)
-              var isPlaying by mutableStateOf(false)
-              var position by mutableLongStateOf(0L)
-              var duration by mutableLongStateOf(0L)
-              var shuffle by mutableStateOf(false)
-              var repeat by mutableIntStateOf(Player.REPEAT_MODE_OFF)
-              var recents by mutableStateOf(readRecents())
-
-              /** أغاني الإنترنت التي شُغّلت، لنجد الأغنية الحالية بمعرّفها. */
-              val online = HashMap<Long, Song>()
-
-              /** اتجاه آخر تغيير للأغنية: 1 = التالي، -1 = السابق (يستعمله تأثير الانتقال). */
-              var dir by mutableIntStateOf(1)
-                  private set
-
-              // قسم القرآن: السورة والآية الجاري تشغيلهما (0 = لا شيء / البسملة)
-              var quranSurah by mutableIntStateOf(0)
-                  private set
-              var quranAyah by mutableIntStateOf(0)
-                  private set
-              var reciterIdx by mutableIntStateOf(prefs.getInt("reciter", 0).coerceIn(0, Quran.reciters.lastIndex))
-                  private set
-
-              fun setReciter(i: Int) {
-                  reciterIdx = i.coerceIn(0, Quran.reciters.lastIndex)
-                  prefs.edit().putInt("reciter", reciterIdx).apply()
-              }
-
-              private fun readRecents(): List<Long> =
-                  (prefs.getString("recent", "") ?: "").split(",").mapNotNull { it.toLongOrNull() }
-
-              private fun pushRecent(id: Long) {
-                  recents = (listOf(id) + recents.filter { it != id }).take(12)
-                  prefs.edit().putString("recent", recents.joinToString(",")).apply()
-              }
-
-              /** معرّف القرآن بصيغة q:السورة:الآية، وأي معرّف آخر فهو أغنية. */
-              private fun onItem(mediaId: String?, record: Boolean) {
-                  if (mediaId == null) return
-                  if (mediaId.startsWith("q:")) {
-                      val p = mediaId.split(":")
-                      quranSurah = p.getOrNull(1)?.toIntOrNull() ?: 0
-                      quranAyah = p.getOrNull(2)?.toIntOrNull() ?: 0
-                      currentId = -1L
-                  } else {
-                      quranSurah = 0; quranAyah = 0
-                      mediaId.toLongOrNull()?.let { currentId = it; if (record) pushRecent(it) }
-                  }
-              }
-
-              private val listener = object : Player.Listener {
-                  override fun onIsPlayingChanged(isPlaying: Boolean) { this@PlayerUi.isPlaying = isPlaying }
-                  override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                      if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) dir = 1
-                      onItem(mediaItem?.mediaId, record = true)
-                      syncPosition()
-                  }
-                  override fun onPlaybackStateChanged(playbackState: Int) = syncPosition()
-                  override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { shuffle = shuffleModeEnabled }
-                  override fun onRepeatModeChanged(repeatMode: Int) { repeat = repeatMode }
-              }
-
-              fun attach(c: MediaController) {
-                  controller = c
-                  c.addListener(listener)
-                  isPlaying = c.isPlaying
-                  shuffle = c.shuffleModeEnabled
-                  repeat = c.repeatMode
-                  onItem(c.currentMediaItem?.mediaId, record = false)
-                  syncPosition()
-              }
-
-              fun detach() {
-                  controller?.removeListener(listener)
-                  controller = null
-              }
-
-              fun syncPosition() {
-                  controller?.let { position = it.currentPosition; duration = it.duration.coerceAtLeast(0L) }
-              }
-
-              private fun item(s: Song) = MediaItem.Builder()
-                  .setUri(s.uri).setMediaId(s.id.toString())
-                  .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setArtworkUri(s.art).build())
-                  .build()
-
-              fun play(list: List<Song>, index: Int, shuffleMode: Boolean? = null) {
-                  val c = controller ?: return
-                  if (list.isEmpty()) return
-                  list.forEach { if (it.remoteUrl != null) online[it.id] = it }
-                  if (shuffleMode != null) c.shuffleModeEnabled = shuffleMode
-                  c.setMediaItems(list.map(::item), index.coerceIn(list.indices), 0)
-                  c.prepare(); c.play()
-              }
-
-              /** يشغّل السورة آية بعد آية (مع البسملة في البداية) بصوت القارئ المختار. */
-              fun playQuran(surah: Int, startAyah: Int = 1) {
-                  val c = controller ?: return
-                  val info = Quran.surahs.getOrNull(surah - 1) ?: return
-                  val reciter = Quran.reciters[reciterIdx]
-                  fun q(s: Int, a: Int, urlSurah: Int, urlAyah: Int, label: String) = MediaItem.Builder()
-                      .setUri(Quran.audioUrl(reciter.folder, urlSurah, urlAyah))
-                      .setMediaId("q:$s:$a")
-                      .setMediaMetadata(MediaMetadata.Builder().setTitle("سورة ${info.name} - $label").setArtist(reciter.name).build())
-                      .build()
-                  val bism = Quran.hasBasmala(surah)
-                  val items = buildList {
-                      if (bism) add(q(surah, 0, 1, 1, "البسملة"))
-                      for (a in 1..info.ayahs) add(q(surah, a, surah, a, "آية ${Quran.digits(a)}"))
-                  }
-                  val start = if (startAyah <= 1) 0 else (startAyah - 1) + (if (bism) 1 else 0)
-                  c.shuffleModeEnabled = false
-                  c.repeatMode = Player.REPEAT_MODE_OFF
-                  c.setMediaItems(items, start.coerceIn(items.indices), 0)
-                  c.prepare(); c.play()
-              }
-
-              fun togglePlay() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
-              fun next() { dir = 1; controller?.seekToNext() }
-              fun previous() { dir = -1; controller?.seekToPrevious() }
-              fun seek(ms: Long) { controller?.seekTo(ms); position = ms }
-              fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
-              fun cycleRepeat() {
-                  controller?.let {
-                      it.repeatMode = when (it.repeatMode) {
-                          Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                          Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                          else -> Player.REPEAT_MODE_OFF
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          fun rememberPlayerUi(): PlayerUi {
-              val ctx = LocalContext.current
-              val ui = remember { PlayerUi(ctx.applicationContext) }
-              DisposableEffect(Unit) {
-                  val f = MediaController.Builder(ctx, SessionToken(ctx, ComponentName(ctx, PlaybackService::class.java))).buildAsync()
-                  f.addListener({ runCatching { ui.attach(f.get()) } }, ContextCompat.getMainExecutor(ctx))
-                  onDispose { ui.detach(); MediaController.releaseFuture(f) }
-              }
-              return ui
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Components.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.graphics.Bitmap
-          import androidx.compose.animation.animateColorAsState
-          import androidx.compose.animation.core.*
-          import androidx.compose.foundation.Canvas
-          import androidx.compose.foundation.Image
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.clickable
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.rounded.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.draw.alpha
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.geometry.Size
-          import androidx.compose.ui.graphics.*
-          import androidx.compose.ui.graphics.luminance
-          import androidx.compose.ui.graphics.vector.ImageVector
-          import androidx.compose.ui.layout.ContentScale
-          import androidx.compose.ui.platform.LocalContext
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.style.TextAlign
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.Dp
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import androidx.palette.graphics.Palette
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.withContext
-          import kotlin.math.abs
-
-          @Composable
-          fun rememberArt(song: Song?): State<Bitmap?> {
-              val ctx = LocalContext.current.applicationContext
-              return produceState<Bitmap?>(song?.let { Art.peek(it.albumId) }, song?.albumId) {
-                  value = song?.let { Art.get(ctx, it) }
-              }
-          }
-
-          data class CoverPalette(val accent: Color, val bg: Color)
-
-          /** لون الخلفية: نفس لون الغلاف الأكثر حضورًا لكن فاتحًا وزاهيًا، مع خفض السطوع فقط إن كان فاتحًا جدًا ليبقى النص مقروءًا. */
-          private fun vividTone(h: Float, s: Float): Color {
-              val sat = s.coerceIn(0.55f, 0.95f)
-              var v = 0.82f
-              var c = Color.hsv(h, sat, v)
-              while (c.luminance() > 0.30f && v > 0.45f) { v -= 0.04f; c = Color.hsv(h, sat, v) }
-              return c
-          }
-
-          /** اللون الأكثر حضورًا في الغلاف: نعدّ البكسلات الملوّنة حسب درجة اللون ونتجاهل الأسود والرمادي. */
-          private fun dominantColor(b: Bitmap): Color? {
-              val n = 48
-              val small = Bitmap.createScaledBitmap(b, n, n, true)
-              val px = IntArray(n * n)
-              small.getPixels(px, 0, n, 0, 0, n, n)
-              val w = FloatArray(36); val r = FloatArray(36); val g = FloatArray(36); val bl = FloatArray(36)
-              val hsv = FloatArray(3)
-              for (c in px) {
-                  android.graphics.Color.colorToHSV(c, hsv)
-                  if (hsv[2] < 0.2f || hsv[1] < 0.18f) continue
-                  val wt = hsv[1] * hsv[2]
-                  val i = (hsv[0] / 10f).toInt().coerceIn(0, 35)
-                  w[i] += wt
-                  r[i] += android.graphics.Color.red(c) * wt
-                  g[i] += android.graphics.Color.green(c) * wt
-                  bl[i] += android.graphics.Color.blue(c) * wt
-              }
-              var best = -1
-              var bestScore = 0f
-              for (i in 0 until 36) {
-                  val sc = w[i] + 0.5f * (w[(i + 35) % 36] + w[(i + 1) % 36])
-                  if (sc > bestScore) { bestScore = sc; best = i }
-              }
-              if (best < 0 || w[best] <= 0f) return null
-              return Color(r[best] / w[best] / 255f, g[best] / w[best] / 255f, bl[best] / w[best] / 255f)
-          }
-
-          /** لون مميّز (فاتح) ولون خلفية من الغلاف، يتحركان بنعومة عند تغيّر الأغنية. */
-          @Composable
-          fun rememberCoverPalette(song: Song?, fallback: Color): CoverPalette {
-              val art by rememberArt(song)
-              val target by produceState(CoverPalette(TM.VioletSoft, fallback), art) {
-                  val bmp = art
-                  value = if (bmp == null) CoverPalette(TM.VioletSoft, fallback) else withContext(Dispatchers.Default) {
-                      val base = dominantColor(bmp) ?: Palette.from(bmp).generate().let { p ->
-                          (p.dominantSwatch ?: p.mutedSwatch)?.let { Color(it.rgb) }
-                      }
-                      if (base == null) CoverPalette(TM.VioletSoft, fallback) else {
-                          val hsv = FloatArray(3)
-                          android.graphics.Color.colorToHSV(base.toArgb(), hsv)
-                          CoverPalette(
-                              Color.hsv(hsv[0], hsv[1].coerceIn(0.45f, 0.85f), 0.95f),
-                              vividTone(hsv[0], hsv[1])
-                          )
-                      }
-                  }
-              }
-              val accent by animateColorAsState(target.accent, tween(900), label = "accent")
-              val bg by animateColorAsState(target.bg, tween(900), label = "bg")
-              return CoverPalette(accent, bg)
-          }
-
-          @Composable
-          fun rememberCoverColor(song: Song?, fallback: Color): Color = rememberCoverPalette(song, fallback).bg
-
-          @Composable
-          fun Cover(song: Song?, modifier: Modifier = Modifier, corner: Dp = 12.dp, saturation: Float = 1f) {
-              val art by rememberArt(song)
-              val hue = abs(((song?.albumId ?: 0L) * 47) % 360).toFloat()
-              Box(
-                  modifier
-                      .clip(RoundedCornerShape(corner))
-                      .background(Brush.linearGradient(listOf(Color.hsv(hue, 0.5f, 0.45f), Color.hsv((hue + 40) % 360, 0.6f, 0.22f)))),
-                  contentAlignment = Alignment.Center
-              ) {
-                  val b = art
-                  if (b == null) Icon(Icons.Rounded.MusicNote, null, tint = Color.White.copy(0.5f), modifier = Modifier.fillMaxSize(0.4f))
-                  else Image(
-                      b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
-                      colorFilter = if (saturation < 0.999f) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(saturation) }) else null
-                  )
-              }
-          }
-
-          @Composable
-          fun EqBars(playing: Boolean, color: Color) {
-              val t = rememberInfiniteTransition(label = "eq")
-              Row(Modifier.height(16.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
-                  listOf(420, 560, 360).forEachIndexed { i, d ->
-                      val h by t.animateFloat(0.25f, 1f, infiniteRepeatable(tween(d, easing = LinearEasing), RepeatMode.Reverse), label = "bar$i")
-                      Box(Modifier.width(3.dp).fillMaxHeight(if (playing) h else 0.3f).background(color, RoundedCornerShape(2.dp)))
-                  }
-              }
-          }
-
-          @Composable
-          fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-              Text(text, style = MaterialTheme.typography.titleLarge, modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp))
-          }
-
-          @Composable
-          fun SongRow(song: Song, active: Boolean, playing: Boolean, onClick: () -> Unit) {
-              Row(
-                  Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically
-              ) {
-                  Cover(song, Modifier.size(52.dp), 8.dp)
-                  Spacer(Modifier.width(14.dp))
-                  Column(Modifier.weight(1f)) {
-                      Text(
-                          song.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                          color = if (active) TM.VioletSoft else TM.Text, fontWeight = FontWeight.SemiBold
-                      )
-                      Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = TM.Muted)
-                  }
-                  Spacer(Modifier.width(10.dp))
-                  if (active) EqBars(playing, TM.VioletSoft)
-                  else Text(fmt(song.duration), style = MaterialTheme.typography.bodySmall, color = TM.Muted)
-              }
-          }
-
-          @Composable
-          fun ProgressLine(frac: Float, modifier: Modifier = Modifier) {
-              Canvas(modifier.fillMaxWidth().height(2.dp)) {
-                  drawRect(Color.White, size = Size(size.width * frac.coerceIn(0f, 1f), size.height))
-              }
-          }
-
-          @Composable
-          fun MiniPlayer(song: Song, ui: PlayerUi, tint: Color, onOpen: () -> Unit) {
-              Box(
-                  Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)
-                      .clip(RoundedCornerShape(16.dp)).background(tint).clickable(onClick = onOpen)
-              ) {
-                  Row(Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                      Cover(song, Modifier.size(44.dp), 8.dp)
-                      Spacer(Modifier.width(12.dp))
-                      Column(Modifier.weight(1f)) {
-                          Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                          Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = Color.White.copy(0.7f))
-                      }
-                      IconButton(ui::togglePlay) {
-                          Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(30.dp))
-                      }
-                      IconButton(ui::next) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(28.dp)) }
-                  }
-                  ProgressLine(
-                      if (ui.duration > 0) ui.position.toFloat() / ui.duration else 0f,
-                      Modifier.align(Alignment.BottomCenter).alpha(0.9f)
-                  )
-              }
-          }
-
-          @Composable
-          fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier) {
-              Column(modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                  Icon(icon, null, Modifier.size(56.dp), tint = TM.Muted)
-                  Spacer(Modifier.height(16.dp))
-                  Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-                  Spacer(Modifier.height(6.dp))
-                  Text(body, color = TM.Muted, textAlign = TextAlign.Center)
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Screens.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.clickable
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.LazyRow
-          import androidx.compose.foundation.lazy.grid.GridCells
-          import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-          import androidx.compose.foundation.lazy.grid.items
-          import androidx.compose.foundation.lazy.items
-          import androidx.compose.foundation.lazy.itemsIndexed
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.rounded.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.graphics.Brush
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.foundation.text.KeyboardActions
-          import androidx.compose.foundation.text.KeyboardOptions
-          import androidx.compose.ui.text.input.ImeAction
-          import androidx.compose.ui.unit.sp
-          import java.util.Calendar
-
-          @Composable
-          fun HomeTab(songs: List<Song>, albums: List<Album>, byId: Map<Long, Song>, ui: PlayerUi) {
-              if (songs.isEmpty()) {
-                  EmptyState(Icons.Rounded.LibraryMusic, "لا توجد أغانٍ على جهازك", "انسخ ملفات صوتية إلى الهاتف وستظهر هنا مباشرة.")
-                  return
-              }
-              val quick = remember(ui.recents, songs) {
-                  ui.recents.mapNotNull { byId[it] }.ifEmpty { songs }.take(6)
-              }
-              val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-              val greet = when { hour < 5 -> "ليلة هادئة"; hour < 12 -> "صباح الخير"; hour < 18 -> "طاب يومك"; else -> "مساء الخير" }
-
-              LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
-                  item {
-                      Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)) {
-                          Text(greet, color = TM.Muted)
-                          Text(
-                              "T Music",
-                              style = MaterialTheme.typography.headlineMedium.copy(brush = Brush.horizontalGradient(listOf(TM.VioletSoft, TM.Blue)))
-                          )
-                      }
-                  }
-                  item {
-                      Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                          quick.chunked(2).forEach { pair ->
-                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                  pair.forEach { s ->
-                                      Row(
-                                          Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(8.dp)).background(TM.Raised)
-                                              .clickable { ui.play(songs, songs.indexOfFirst { it.id == s.id }) },
-                                          verticalAlignment = Alignment.CenterVertically
-                                      ) {
-                                          Cover(s, Modifier.size(56.dp), 0.dp)
-                                          Text(
-                                              s.title, Modifier.padding(horizontal = 10.dp), maxLines = 2,
-                                              overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp
-                                          )
-                                      }
-                                  }
-                                  if (pair.size == 1) Spacer(Modifier.weight(1f))
-                              }
-                          }
-                      }
-                  }
-                  item {
-                      Box(
-                          Modifier.fillMaxWidth().padding(16.dp).clip(RoundedCornerShape(20.dp))
-                              .background(Brush.horizontalGradient(listOf(TM.Violet, TM.Blue)))
-                              .clickable { ui.play(songs, songs.indices.random(), shuffleMode = true) }
-                              .padding(20.dp)
-                      ) {
-                          Row(verticalAlignment = Alignment.CenterVertically) {
-                              Icon(Icons.Rounded.Shuffle, null, Modifier.size(32.dp), tint = Color.White)
-                              Spacer(Modifier.width(14.dp))
-                              Column {
-                                  Text("تشغيل عشوائي", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                  Text("${songs.size} أغنية من مكتبتك", color = Color.White.copy(0.8f), fontSize = 13.sp)
-                              }
-                          }
-                      }
-                  }
-                  if (albums.isNotEmpty()) {
-                      item {
-                          SectionTitle("ألبوماتك")
-                          LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                              items(albums, key = { it.id }) { AlbumCard(it, ui, Modifier.width(148.dp)) }
-                          }
-                      }
-                  }
-                  item { SectionTitle("كل الأغاني") }
-                  itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
-                      SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(songs, i) }
-                  }
-              }
-          }
-
-          @Composable
-          fun AlbumCard(album: Album, ui: PlayerUi, modifier: Modifier = Modifier) {
-              Column(modifier.clip(RoundedCornerShape(14.dp)).clickable { ui.play(album.songs, 0) }) {
-                  Cover(album.songs.first(), Modifier.fillMaxWidth().aspectRatio(1f), 14.dp)
-                  Text(album.name, Modifier.padding(top = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                  Text(album.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = TM.Muted)
-              }
-          }
-
-          @OptIn(ExperimentalMaterial3Api::class)
-          @Composable
-          fun SearchTab(songs: List<Song>, artists: List<Artist>, ui: PlayerUi, onOpenSurah: (Int) -> Unit, onYoutube: (YtVideo) -> Unit) {
-              var q by remember { mutableStateOf("") }
-              val results = remember(songs, q) {
-                  if (q.isBlank()) emptyList()
-                  else songs.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
-              }
-              val surahHits = remember(q) { Quran.search(q) }
-              val (online, loading0) = rememberOnline(q)
-              var submitted by remember { mutableStateOf("") }
-              LaunchedEffect(q) { if (q.isBlank()) submitted = "" else { kotlinx.coroutines.delay(900); submitted = q.trim() } }
-              val (yt, ytLoading) = rememberYoutube(submitted)
-              val loading = loading0 || ytLoading
-              Column(Modifier.fillMaxSize()) {
-                  Text("بحث", style = MaterialTheme.typography.headlineMedium, maxLines = 1, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
-                  TextField(
-                      value = q, onValueChange = { q = it }, singleLine = true,
-                      keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                      keyboardActions = KeyboardActions(onSearch = { submitted = q.trim() }),
-                      placeholder = { Text("أغنية، فنان، ألبوم، أو سورة") },
-                      leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                      trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
-                      shape = RoundedCornerShape(14.dp),
-                      colors = TextFieldDefaults.colors(
-                          focusedContainerColor = TM.Raised, unfocusedContainerColor = TM.Raised,
-                          focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
-                      ),
-                      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                  )
-                  Spacer(Modifier.height(8.dp))
-                  when {
-                      q.isBlank() -> {
-                          SectionTitle("ابدأ بفنان")
-                          LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                              items(artists.take(10), key = { it.name }) { a ->
-                                  AssistChip(onClick = { q = a.name }, label = { Text(a.name) })
-                              }
-                          }
-                      }
-                      results.isEmpty() && surahHits.isEmpty() && online.isEmpty() && yt.isEmpty() && !loading -> EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم الفنان أو السورة." + (if (!Online.ytReady) " لنتائج يوتيوب أضف المفتاح في Online.kt." else if (submitted != q.trim()) " اضغط زر البحث في لوحة المفاتيح لنتائج يوتيوب." else ""))
-                      else -> LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
-                          if (Online.ytReady && q.isNotBlank() && submitted != q.trim()) item {
-                              Text("اضغط زر البحث في لوحة المفاتيح لعرض نتائج يوتيوب", color = TM.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                          }
-                          if (surahHits.isNotEmpty()) {
-                              item { SectionTitle("السور") }
-                              items(surahHits, key = { "s${it.number}" }) { s ->
-                                  SurahRow(s, ui.quranSurah == s.number, ui.isPlaying) { onOpenSurah(s.number) }
-                              }
-                          }
-                          if (results.isNotEmpty()) {
-                              item { SectionTitle("على جهازك") }
-                              itemsIndexed(results, key = { _, s -> "m${s.id}" }) { i, s ->
-                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(results, i) }
-                              }
-                          }
-                          if (yt.isNotEmpty()) {
-                              item { SectionTitle("من يوتيوب") }
-                              items(yt, key = { "y${it.id}" }) { v -> YtRow(v) { onYoutube(v) } }
-                          }
-                          if (online.isNotEmpty()) {
-                              item { SectionTitle("من الإنترنت") }
-                              itemsIndexed(online, key = { _, s -> "o${s.id}" }) { i, s ->
-                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(online, i) }
-                              }
-                          }
-                          if (loading) item {
-                              Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
-                                  CircularProgressIndicator(color = TM.Violet, modifier = Modifier.size(28.dp))
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          fun LibraryTab(albums: List<Album>, artists: List<Artist>, ui: PlayerUi) {
-              var mode by remember { mutableIntStateOf(0) }
-              Column(Modifier.fillMaxSize()) {
-                  Text("مكتبتي", style = MaterialTheme.typography.headlineMedium, maxLines = 1, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
-                  Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      FilterChip(mode == 0, { mode = 0 }, label = { Text("الألبومات") })
-                      FilterChip(mode == 1, { mode = 1 }, label = { Text("الفنانون") })
-                  }
-                  Spacer(Modifier.height(8.dp))
-                  if (mode == 0) {
-                      LazyVerticalGrid(
-                          GridCells.Fixed(2), contentPadding = PaddingValues(16.dp),
-                          horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
-                      ) { items(albums, key = { it.id }) { AlbumCard(it, ui) } }
-                  } else {
-                      LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
-                          items(artists, key = { it.name }) { a ->
-                              Row(
-                                  Modifier.fillMaxWidth().clickable { ui.play(a.songs, 0) }.padding(horizontal = 16.dp, vertical = 8.dp),
-                                  verticalAlignment = Alignment.CenterVertically
-                              ) {
-                                  Cover(a.songs.first(), Modifier.size(56.dp), 28.dp)
-                                  Spacer(Modifier.width(14.dp))
-                                  Column {
-                                      Text(a.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                      Text("${a.songs.size} أغنية", fontSize = 12.sp, color = TM.Muted)
-                                  }
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/NowPlaying.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.net.Uri
-          import android.os.Build
-          import androidx.activity.compose.rememberLauncherForActivityResult
-          import androidx.activity.result.contract.ActivityResultContracts
-          import androidx.compose.animation.*
-          import androidx.compose.animation.core.*
-          import androidx.compose.foundation.Canvas
-          import androidx.compose.foundation.Image
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.clickable
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.itemsIndexed
-          import androidx.compose.foundation.lazy.rememberLazyListState
-          import androidx.compose.foundation.shape.CircleShape
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.rounded.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.draw.blur
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.draw.drawBehind
-          import androidx.compose.ui.draw.drawWithContent
-          import androidx.compose.ui.draw.shadow
-          import androidx.compose.ui.geometry.Offset
-          import androidx.compose.ui.graphics.*
-          import androidx.compose.ui.graphics.drawscope.Stroke
-          import androidx.compose.ui.layout.ContentScale
-          import androidx.compose.ui.platform.LocalContext
-          import androidx.compose.ui.platform.LocalLayoutDirection
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.style.TextAlign
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.LayoutDirection
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import androidx.media3.common.Player
-          import kotlinx.coroutines.delay
-          import kotlinx.coroutines.launch
-
-          /**
-           * خلفية سينمائية: لون الغلاف الأكثر حضورًا فاتحًا، وغلاف مموّه يتحرك ببطء (Ken Burns) ويتبدّل بتلاشٍ،
-           * وتوهّجان يخفقان بإيقاع منتظم أثناء التشغيل ويخفتان عند الإيقاف، وإطار معتم أعلى وأسفل.
-           */
-          @Composable
-          private fun CinematicBackdrop(song: Song, pal: CoverPalette, playing: Boolean) {
-              val inf = rememberInfiniteTransition(label = "backdrop")
-              val drift by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(16000, easing = LinearEasing), RepeatMode.Reverse), label = "drift")
-              val pulse by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulse")
-              val live by animateFloatAsState(if (playing) 1f else 0.3f, tween(900), label = "live")
-              Box(Modifier.fillMaxSize()) {
-                  Box(
-                      Modifier.fillMaxSize().background(
-                          Brush.verticalGradient(0f to pal.bg, 0.5f to lerp(pal.bg, TM.Ink, 0.6f), 0.9f to TM.Ink)
-                      )
-                  )
-                  if (Build.VERSION.SDK_INT >= 31) {
-                      Crossfade(song, animationSpec = tween(900), label = "backdrop-art") { sg ->
-                          val art by rememberArt(sg)
-                          val b = art
-                          if (b != null) Image(
-                              b.asImageBitmap(), null,
-                              Modifier.fillMaxSize().graphicsLayer {
-                                  val z = 1.5f + 0.15f * drift
-                                  scaleX = z; scaleY = z
-                                  translationX = (drift - 0.5f) * 90f
-                                  alpha = 0.5f * (0.5f + 0.5f * live)
-                              }.blur(70.dp),
-                              contentScale = ContentScale.Crop
-                          )
-                      }
-                  }
-                  Box(
-                      Modifier.fillMaxSize().drawBehind {
-                          val k = 1f + 0.12f * pulse * live
-                          drawRect(
-                              Brush.radialGradient(
-                                  listOf(pal.accent.copy(alpha = 0.34f * live), Color.Transparent),
-                                  center = Offset(size.width * (0.2f + 0.6f * drift), size.height * 0.30f), radius = size.width * 0.9f * k
-                              )
-                          )
-                          drawRect(
-                              Brush.radialGradient(
-                                  listOf(pal.accent.copy(alpha = 0.2f * live), Color.Transparent),
-                                  center = Offset(size.width * (0.9f - 0.6f * drift), size.height * 0.62f), radius = size.width * 0.8f * k
-                              )
-                          )
-                          drawRect(Brush.verticalGradient(0f to Color.Black.copy(0.35f), 0.2f to Color.Transparent, 0.8f to Color.Transparent, 1f to Color.Black.copy(0.45f)))
-                      }
-                  )
-              }
-          }
-
-          /** دخول متدرّج: كل عنصر يظهر بتأخير بسيط ويصعد من الأسفل. */
-          @Composable
-          private fun Modifier.stagger(index: Int): Modifier {
-              val a = remember { Animatable(0f) }
-              LaunchedEffect(Unit) {
-                  delay(110L * index)
-                  a.animateTo(1f, tween(600, easing = FastOutSlowInEasing))
-              }
-              return this.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 60f }
-          }
-
-          @OptIn(ExperimentalMaterial3Api::class)
-          @Composable
-          fun NowPlaying(song: Song, ui: PlayerUi, onClose: () -> Unit) {
-              val ctx = LocalContext.current
-              val pal = rememberCoverPalette(song, TM.Raised)
-              var showLyrics by remember { mutableStateOf(false) }
-              var version by remember { mutableIntStateOf(0) }
-              val lyrics = remember(song.id, version) { LyricsStore.load(ctx, song.id) }
-              var showPaste by remember { mutableStateOf(false) }
-
-              val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-                  val text = uri?.let {
-                      runCatching { ctx.contentResolver.openInputStream(it)?.bufferedReader(Charsets.UTF_8)?.use { r -> r.readText() } }.getOrNull()
-                  }
-                  if (!text.isNullOrBlank()) { LyricsStore.save(ctx, song.id, text); version++ }
-              }
-
-              // مدخل سينمائي: شريطان أسودان ينسحبان عند فتح الشاشة
-              val open = remember { Animatable(0f) }
-              LaunchedEffect(Unit) { open.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
-
-              // وميض سينمائي سريع عند تبديل الأغنية (تالي/سابق)
-              val skipFlash = remember { Animatable(0f) }
-              var firstSong by remember { mutableStateOf(true) }
-              LaunchedEffect(song.id) {
-                  if (firstSong) { firstSong = false; return@LaunchedEffect }
-                  skipFlash.snapTo(0.22f)
-                  skipFlash.animateTo(0f, tween(600, easing = FastOutSlowInEasing))
-              }
-              // شريطان سينمائيان يطبقان قليلًا عند الإيقاف مؤقتًا
-              val pauseBar by animateDpAsState(if (ui.isPlaying) 0.dp else 26.dp, tween(650, easing = FastOutSlowInEasing), label = "pause-bars")
-
-              Box(Modifier.fillMaxSize().background(TM.Ink).clickable(enabled = false) {}) {
-                  CinematicBackdrop(song, pal, ui.isPlaying)
-
-                  Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
-                      // الشريط العلوي
-                      Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).stagger(0), verticalAlignment = Alignment.CenterVertically) {
-                          IconButton(onClose) { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(32.dp)) }
-                          Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                              Text("يُشغَّل الآن", fontSize = 12.sp, color = Color.White.copy(0.65f))
-                              Text(
-                                  song.album.ifBlank { song.artist }, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                                  maxLines = 1, overflow = TextOverflow.Ellipsis
-                              )
-                          }
-                          if (song.downloadUrl != null) IconButton({ downloadSong(ctx, song) }) {
-                              Icon(Icons.Rounded.Download, null, Modifier.size(26.dp))
-                          }
-                          IconButton({ showLyrics = !showLyrics }) {
-                              Icon(Icons.Rounded.Lyrics, null, tint = if (showLyrics) pal.accent else Color.White, modifier = Modifier.size(26.dp))
-                          }
-                      }
-
-                      // المنطقة الوسطى: الغلاف أو الكلمات
-                      Box(Modifier.weight(1f).fillMaxWidth().stagger(1), contentAlignment = Alignment.Center) {
-                          Crossfade(showLyrics, label = "stage") { lyricsOn ->
-                              if (lyricsOn) LyricsPanel(
-                                  lyrics, ui,
-                                  onPick = { picker.launch(arrayOf("*/*")) },
-                                  onPaste = { showPaste = true },
-                                  onClear = { LyricsStore.delete(ctx, song.id); version++ }
-                              ) else CoverStage(song, ui, pal.accent)
-                          }
-                      }
-
-                      // العنوان: ينتقل بنعومة عند تغيّر الأغنية
-                      AnimatedContent(
-                          targetState = song,
-                          modifier = Modifier.fillMaxWidth().padding(top = 12.dp).stagger(2),
-                          transitionSpec = {
-                              (fadeIn(tween(450, delayMillis = 120)) + slideInVertically(tween(450)) { it / 3 }) togetherWith
-                                  fadeOut(tween(200))
-                          },
-                          label = "titles"
-                      ) { sg ->
-                          Column(Modifier.fillMaxWidth()) {
-                              Text(sg.title, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                              Text(sg.artist, fontSize = 16.sp, color = Color.White.copy(0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                          }
-                      }
-
-                      // شريط التقدّم + الأزرار (دائمًا من اليسار لليمين)
-                      CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                          Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp).stagger(3)) {
-                              var drag by remember { mutableStateOf<Float?>(null) }
-                              val dur = ui.duration.coerceAtLeast(1L).toFloat()
-                              val shown = (drag ?: ui.position.toFloat()).coerceIn(0f, dur)
-                              Slider(
-                                  value = shown, valueRange = 0f..dur,
-                                  onValueChange = { drag = it },
-                                  onValueChangeFinished = { drag?.let { ui.seek(it.toLong()) }; drag = null },
-                                  thumb = { Box(Modifier.size(14.dp).background(Color.White, CircleShape)) },
-                                  colors = SliderDefaults.colors(
-                                      activeTrackColor = pal.accent, inactiveTrackColor = Color.White.copy(0.22f)
-                                  )
-                              )
-                              Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                  Text(fmt(shown.toLong()), fontSize = 12.sp, color = Color.White.copy(0.65f))
-                                  Text(fmt(ui.duration), fontSize = 12.sp, color = Color.White.copy(0.65f))
-                              }
-                              Spacer(Modifier.height(8.dp))
-                              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                  IconButton(ui::toggleShuffle) {
-                                      Icon(Icons.Rounded.Shuffle, null, tint = if (ui.shuffle) pal.accent else Color.White.copy(0.7f))
-                                  }
-                                  IconButton(ui::previous, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, null, Modifier.size(40.dp)) }
-                                  FilledIconButton(
-                                      ui::togglePlay, Modifier.size(72.dp),
-                                      colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.White, contentColor = Color.Black)
-                                  ) {
-                                      Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(42.dp))
-                                  }
-                                  IconButton(ui::next, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(40.dp)) }
-                                  IconButton(ui::cycleRepeat) {
-                                      Icon(
-                                          if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null,
-                                          tint = if (ui.repeat != Player.REPEAT_MODE_OFF) pal.accent else Color.White.copy(0.7f)
-                                      )
-                                  }
-                              }
-                          }
-                      }
-                  }
-
-                  // الشريطان السينمائيان (يغطيان الأعلى والأسفل ثم ينسحبان)
-                  val bar = maxOf((110f * (1f - open.value)).dp, pauseBar)
-                  Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(bar).background(Color.Black))
-                  Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bar).background(Color.Black))
-                  if (skipFlash.value > 0.002f) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = skipFlash.value)))
-              }
-
-              if (showPaste) {
-                  var text by remember { mutableStateOf("") }
-                  AlertDialog(
-                      onDismissRequest = { showPaste = false },
-                      title = { Text("لصق الكلمات") },
-                      text = {
-                          OutlinedTextField(
-                              text, { text = it }, minLines = 6, maxLines = 10,
-                              placeholder = { Text("الصق الكلمات هنا. يدعم تنسيق LRC المتزامن.") }
-                          )
-                      },
-                      confirmButton = {
-                          TextButton({
-                              if (text.isNotBlank()) { LyricsStore.save(ctx, song.id, text); version++ }
-                              showPaste = false
-                          }) { Text("حفظ") }
-                      },
-                      dismissButton = { TextButton({ showPaste = false }) { Text("إلغاء") } }
-                  )
-              }
-          }
-
-          /**
-           * الغلاف السينمائي:
-           *  - الانتقال بين الأغاني: ينزلق الغلاف القديم ويصغر، ويدخل الجديد من الجهة المناسبة (التالي/السابق).
-           *  - الإيقاف: يصغر الغلاف ويخفت لونه ويظلم، وتظهر أيقونة إيقاف تتلاشى.
-           *  - التشغيل: يعود بنبضة مرنة، تظهر أيقونة تشغيل وحلقة ضوء تتسع وتتلاشى.
-           *  - أثناء التشغيل: تقريب بطيء للصورة (Ken Burns) ولمعة ضوء تعبر الغلاف.
-           */
-          @Composable
-          private fun CoverStage(song: Song, ui: PlayerUi, accent: Color) {
-              val playing = ui.isPlaying
-              val scale by animateFloatAsState(if (playing) 1f else 0.84f, spring(dampingRatio = 0.55f, stiffness = 220f), label = "cover-scale")
-              val sat by animateFloatAsState(if (playing) 1f else 0.25f, tween(700), label = "cover-sat")
-              val dim by animateFloatAsState(if (playing) 0f else 0.35f, tween(700), label = "cover-dim")
-              val inf = rememberInfiniteTransition(label = "cover-fx")
-              val zoom by inf.animateFloat(1f, 1.07f, infiniteRepeatable(tween(18000, easing = LinearEasing), RepeatMode.Reverse), label = "zoom")
-              val sweep by inf.animateFloat(-0.6f, 1.6f, infiniteRepeatable(tween(5200, easing = FastOutSlowInEasing), RepeatMode.Restart), label = "sweep")
-
-              val flash = remember { Animatable(1f) }
-              val ring = remember { Animatable(1f) }
-              var first by remember { mutableStateOf(true) }
-              LaunchedEffect(playing) {
-                  if (first) { first = false; return@LaunchedEffect }
-                  flash.snapTo(0f); ring.snapTo(0f)
-                  if (playing) launch { ring.animateTo(1f, tween(900)) }
-                  flash.animateTo(1f, tween(650, easing = FastOutSlowInEasing))
-              }
-
-              BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                  val s = minOf(maxWidth, maxHeight)
-
-                  Canvas(Modifier.size(s)) {
-                      val p = ring.value
-                      if (p in 0.01f..0.99f) {
-                          drawCircle(
-                              accent.copy(alpha = 0.5f * (1f - p)),
-                              radius = size.minDimension / 2f * (0.9f + 0.6f * p),
-                              style = Stroke(width = 6f)
-                          )
-                      }
-                  }
-
-                  AnimatedContent(
-                      targetState = song,
-                      transitionSpec = {
-                          val d = ui.dir
-                          (slideInHorizontally(tween(550, easing = FastOutSlowInEasing)) { d * it / 2 } +
-                              fadeIn(tween(450)) + scaleIn(tween(550), initialScale = 0.85f)) togetherWith
-                              (slideOutHorizontally(tween(450, easing = FastOutSlowInEasing)) { -d * it / 2 } +
-                                  fadeOut(tween(300)) + scaleOut(tween(450), targetScale = 0.85f))
-                      },
-                      label = "cover-swap"
-                  ) { sg ->
-                      Box(
-                          Modifier.size(s)
-                              .graphicsLayer { scaleX = scale; scaleY = scale }
-                              .shadow(30.dp, RoundedCornerShape(22.dp), clip = false, ambientColor = accent, spotColor = accent)
-                              .clip(RoundedCornerShape(22.dp))
-                              .drawWithContent {
-                                  drawContent()
-                                  // تعتيم الإيقاف + إطار معتم خفيف (Vignette)
-                                  drawRect(Color.Black.copy(alpha = dim))
-                                  drawRect(
-                                      Brush.radialGradient(
-                                          0.6f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.35f),
-                                          center = center, radius = size.maxDimension * 0.75f
-                                      )
-                                  )
-                                  // لمعة ضوء تعبر الغلاف أثناء التشغيل
-                                  if (playing) {
-                                      val x = size.width * sweep
-                                      drawRect(
-                                          Brush.linearGradient(
-                                              listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent),
-                                              start = Offset(x - 140f, 0f), end = Offset(x + 140f, size.height)
-                                          )
-                                      )
-                                  }
-                              }
-                      ) {
-                          Cover(sg, Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom }, corner = 0.dp, saturation = sat)
-                      }
-                  }
-
-                  // أيقونة تشغيل/إيقاف تظهر وتتلاشى عند الضغط
-                  if (flash.value in 0.001f..0.999f) {
-                      Box(
-                          Modifier.size(96.dp)
-                              .graphicsLayer {
-                                  alpha = 1f - flash.value
-                                  scaleX = 0.7f + 0.6f * flash.value
-                                  scaleY = 0.7f + 0.6f * flash.value
-                              }
-                              .background(Color.Black.copy(alpha = 0.45f), CircleShape),
-                          contentAlignment = Alignment.Center
-                      ) {
-                          Icon(if (playing) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, null, Modifier.size(54.dp), tint = Color.White)
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          private fun LyricsPanel(
-              lyrics: Lyrics?, ui: PlayerUi,
-              onPick: () -> Unit, onPaste: () -> Unit, onClear: () -> Unit
-          ) {
-              if (lyrics == null) {
-                  Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                      Icon(Icons.Rounded.Lyrics, null, Modifier.size(52.dp), tint = Color.White.copy(0.5f))
-                      Spacer(Modifier.height(14.dp))
-                      Text("لا توجد كلمات لهذه الأغنية", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                      Spacer(Modifier.height(6.dp))
-                      Text(
-                          "أضف ملف .lrc لتظهر الكلمات متزامنة مع الصوت، أو الصق النص.",
-                          color = Color.White.copy(0.65f), textAlign = TextAlign.Center
-                      )
-                      Spacer(Modifier.height(20.dp))
-                      Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                          FilledTonalButton(onPick) {
-                              Icon(Icons.Rounded.UploadFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("اختيار ملف")
-                          }
-                          OutlinedButton(onPaste) {
-                              Icon(Icons.Rounded.ContentPaste, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("لصق نص")
-                          }
-                      }
-                  }
-                  return
-              }
-
-              val listState = rememberLazyListState()
-              val active by remember(lyrics) {
-                  derivedStateOf { if (lyrics.synced) lyrics.lines.indexOfLast { it.timeMs <= ui.position + 250 } else -1 }
-              }
-              LaunchedEffect(active) {
-                  if (active >= 0) listState.animateScrollToItem(active, -listState.layoutInfo.viewportSize.height / 3)
-              }
-
-              LazyColumn(
-                  state = listState,
-                  contentPadding = PaddingValues(vertical = 90.dp),
-                  modifier = Modifier.fillMaxSize()
-                      .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                      .drawWithContent {
-                          drawContent()
-                          drawRect(
-                              Brush.verticalGradient(0f to Color.Transparent, 0.12f to Color.Black, 0.88f to Color.Black, 1f to Color.Transparent),
-                              blendMode = BlendMode.DstIn
-                          )
-                      }
-              ) {
-                  itemsIndexed(lyrics.lines) { i, line ->
-                      val on = lyrics.synced && i == active
-                      val color by animateColorAsState(
-                          when { !lyrics.synced -> Color.White.copy(0.9f); on -> Color.White; else -> Color.White.copy(0.32f) },
-                          tween(300), label = "lyric-color"
-                      )
-                      val size by animateFloatAsState(if (on) 28f else 24f, tween(300), label = "lyric-size")
-                      Text(
-                          line.text, color = color, fontSize = size.sp, lineHeight = (size * 1.3f).sp, fontWeight = FontWeight.Bold,
-                          modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                              .then(if (lyrics.synced) Modifier.clickable { ui.seek(line.timeMs) } else Modifier)
-                              .padding(horizontal = 4.dp, vertical = 9.dp)
-                      )
-                  }
-                  item {
-                      TextButton(onClear, Modifier.padding(top = 24.dp)) {
-                          Icon(Icons.Rounded.Delete, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("حذف الكلمات")
-                      }
-                  }
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Quran.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.content.Context
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.withContext
-          import org.json.JSONObject
-          import java.io.File
-          import java.net.HttpURLConnection
-          import java.net.URL
-          import java.util.Locale
-
-          data class SurahInfo(val number: Int, val name: String, val ayahs: Int)
-          data class Reciter(val name: String, val folder: String)
-
-          /** بيانات القرآن: أسماء السور وأعداد الآيات، القرّاء، وتحميل النص مع تخزين محلي. */
-          object Quran {
-              private val names = listOf(
-                  "الفاتحة", "البقرة", "آل عمران", "النساء", "المائدة", "الأنعام", "الأعراف", "الأنفال", "التوبة", "يونس",
-                  "هود", "يوسف", "الرعد", "إبراهيم", "الحجر", "النحل", "الإسراء", "الكهف", "مريم", "طه",
-                  "الأنبياء", "الحج", "المؤمنون", "النور", "الفرقان", "الشعراء", "النمل", "القصص", "العنكبوت", "الروم",
-                  "لقمان", "السجدة", "الأحزاب", "سبأ", "فاطر", "يس", "الصافات", "ص", "الزمر", "غافر",
-                  "فصلت", "الشورى", "الزخرف", "الدخان", "الجاثية", "الأحقاف", "محمد", "الفتح", "الحجرات", "ق",
-                  "الذاريات", "الطور", "النجم", "القمر", "الرحمن", "الواقعة", "الحديد", "المجادلة", "الحشر", "الممتحنة",
-                  "الصف", "الجمعة", "المنافقون", "التغابن", "الطلاق", "التحريم", "الملك", "القلم", "الحاقة", "المعارج",
-                  "نوح", "الجن", "المزمل", "المدثر", "القيامة", "الإنسان", "المرسلات", "النبأ", "النازعات", "عبس",
-                  "التكوير", "الانفطار", "المطففين", "الانشقاق", "البروج", "الطارق", "الأعلى", "الغاشية", "الفجر", "البلد",
-                  "الشمس", "الليل", "الضحى", "الشرح", "التين", "العلق", "القدر", "البينة", "الزلزلة", "العاديات",
-                  "القارعة", "التكاثر", "العصر", "الهمزة", "الفيل", "قريش", "الماعون", "الكوثر", "الكافرون", "النصر",
-                  "المسد", "الإخلاص", "الفلق", "الناس"
-              )
-
-              private val counts = intArrayOf(
-                  7, 286, 200, 176, 120, 165, 206, 75, 129, 109,
-                  123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
-                  112, 78, 118, 64, 77, 227, 93, 88, 69, 60,
-                  34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
-                  54, 53, 89, 59, 37, 35, 38, 29, 18, 45,
-                  60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
-                  14, 11, 11, 18, 12, 12, 30, 52, 52, 44,
-                  28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
-                  29, 19, 36, 25, 22, 17, 19, 26, 30, 20,
-                  15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
-                  11, 8, 3, 9, 5, 4, 7, 3, 6, 3,
-                  5, 4, 5, 6
-              )
-
-              val surahs: List<SurahInfo> = names.indices.map { SurahInfo(it + 1, names[it], counts[it]) }
-
-              val reciters = listOf(
-                  Reciter("مشاري العفاسي", "Alafasy_128kbps"),
-                  Reciter("عبد الرحمن السديس", "Abdurrahmaan_As-Sudais_192kbps"),
-                  Reciter("سعود الشريم", "Saood_ash-Shuraym_128kbps"),
-                  Reciter("محمود الحصري", "Husary_128kbps"),
-                  Reciter("عبد الباسط عبد الصمد", "Abdul_Basit_Murattal_192kbps"),
-                  Reciter("محمد صديق المنشاوي", "Minshawy_Murattal_128kbps")
-              )
-
-              /** كل السور تبدأ بالبسملة عدا الفاتحة (هي آية فيها) والتوبة (بلا بسملة). */
-              fun hasBasmala(surah: Int) = surah != 1 && surah != 9
-
-              fun audioUrl(folder: String, surah: Int, ayah: Int): String =
-                  String.format(Locale.US, "https://everyayah.com/data/%s/%03d%03d.mp3", folder, surah, ayah)
-
-              fun digits(n: Int): String = n.toString().map { '٠' + (it - '0') }.joinToString("")
-
-              fun normalize(s: String): String = s.trim()
-                  .replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
-                  .replace('ة', 'ه').replace('ى', 'ي')
-
-              fun search(q: String): List<SurahInfo> {
-                  val k = normalize(q).removePrefix("سورة").trim()
-                  if (k.isEmpty()) return emptyList()
-                  return surahs.filter { normalize(it.name).contains(k) || it.number.toString() == k }
-              }
-
-              /** يحمّل آيات السورة؛ من الذاكرة المحلية إن وُجدت وإلا من الإنترنت ثم يحفظها. */
-              suspend fun load(ctx: Context, surah: Int): List<String>? = withContext(Dispatchers.IO) {
-                  val expected = counts[surah - 1]
-                  val f = File(File(ctx.filesDir, "quran").apply { mkdirs() }, "$surah.txt")
-                  if (f.exists()) {
-                      val cached = f.readLines()
-                      if (cached.size == expected) return@withContext cached
-                  }
-                  try {
-                      val conn = URL("https://api.alquran.cloud/v1/surah/$surah/quran-uthmani").openConnection() as HttpURLConnection
-                      conn.connectTimeout = 15000
-                      conn.readTimeout = 20000
-                      val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                      conn.disconnect()
-                      val arr = JSONObject(body).getJSONObject("data").getJSONArray("ayahs")
-                      val out = (0 until arr.length()).map { i ->
-                          val t = arr.getJSONObject(i).getString("text").replace("\n", " ").trim()
-                          if (i == 0 && hasBasmala(surah)) stripBasmala(t) else t
-                      }
-                      if (out.size == expected) { f.writeText(out.joinToString("\n")); out } else null
-                  } catch (e: Exception) {
-                      null
-                  }
-              }
-
-              /** النص العثماني يضع البسملة في أول آية؛ نفصلها لنعرضها في الترويسة. */
-              private fun stripBasmala(t: String): String {
-                  val words = t.split(" ")
-                  if (words.size <= 4) return t
-                  val first = words[0].filter { Character.getType(it) != Character.NON_SPACING_MARK.toInt() }
-                  return if (first == "بسم") words.drop(4).joinToString(" ") else t
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/QuranScreens.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import androidx.activity.compose.BackHandler
-          import androidx.compose.animation.animateColorAsState
-          import androidx.compose.animation.core.tween
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.clickable
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.items
-          import androidx.compose.foundation.lazy.itemsIndexed
-          import androidx.compose.foundation.lazy.rememberLazyListState
-          import androidx.compose.foundation.shape.CircleShape
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-          import androidx.compose.material.icons.rounded.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.graphics.Brush
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.platform.LocalContext
-          import androidx.compose.ui.platform.LocalLayoutDirection
-          import androidx.compose.ui.text.SpanStyle
-          import androidx.compose.ui.text.buildAnnotatedString
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.style.TextAlign
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.text.withStyle
-          import androidx.compose.ui.unit.LayoutDirection
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.foundation.text.KeyboardActions
-          import androidx.compose.foundation.text.KeyboardOptions
-          import androidx.compose.ui.text.input.ImeAction
-          import androidx.compose.ui.unit.sp
-
-          /** مبدّل الأقسام العلوي: T Music | T Quran */
-          @Composable
-          fun SectionSwitch(section: Int, onSelect: (Int) -> Unit) {
-              Row(
-                  Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)
-                      .clip(RoundedCornerShape(24.dp)).background(TM.Raised).padding(4.dp)
-              ) {
-                  listOf("T Music" to Icons.Rounded.MusicNote, "T Quran" to Icons.Rounded.MenuBook).forEachIndexed { i, (label, icon) ->
-                      val on = section == i
-                      val bg by animateColorAsState(
-                          if (on) (if (i == 0) TM.Violet else TM.Emerald) else Color.Transparent, tween(250), label = "section-bg"
-                      )
-                      Row(
-                          Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(bg)
-                              .clickable { onSelect(i) }.padding(vertical = 10.dp),
-                          horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
-                      ) {
-                          Icon(icon, null, Modifier.size(18.dp), tint = if (on) Color.Black else TM.Muted)
-                          Spacer(Modifier.width(6.dp))
-                          Text(label, fontWeight = FontWeight.Bold, color = if (on) Color.Black else TM.Muted)
-                      }
-                  }
-              }
-          }
-
-          /** قسم القرآن كاملًا: قائمة السور، وعند اختيار سورة تُفتح شاشة القراءة. */
-          @Composable
-          fun QuranTab(ui: PlayerUi, songs: List<Song>, openSurah: Int, onYoutube: (YtVideo) -> Unit, onOpen: (Int) -> Unit) {
-              CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                  if (openSurah != 0) SurahReader(openSurah, ui) { onOpen(0) }
-                  else SurahList(ui, songs, onYoutube, onOpen)
-              }
-          }
-
-          @Composable
-          fun SurahRow(s: SurahInfo, active: Boolean, playing: Boolean, onClick: () -> Unit) {
-              Row(
-                  Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
-                  verticalAlignment = Alignment.CenterVertically
-              ) {
-                  Box(
-                      Modifier.size(44.dp).background(TM.Emerald.copy(alpha = if (active) 0.28f else 0.14f), CircleShape),
-                      contentAlignment = Alignment.Center
-                  ) { Text(Quran.digits(s.number), color = TM.Emerald, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
-                  Spacer(Modifier.width(14.dp))
-                  Column(Modifier.weight(1f)) {
-                      Text(
-                          "سورة ${s.name}", fontWeight = FontWeight.SemiBold, fontSize = 18.sp,
-                          color = if (active) TM.Emerald else TM.Text, maxLines = 1, overflow = TextOverflow.Ellipsis
-                      )
-                      Text("${Quran.digits(s.ayahs)} آية", fontSize = 12.sp, color = TM.Muted)
-                  }
-                  if (active) EqBars(playing, TM.Emerald)
-              }
-          }
-
-          /** قائمة السور؛ والبحث فيها عام: يجد السور والأغاني معًا. */
-          @Composable
-          private fun SurahList(ui: PlayerUi, songs: List<Song>, onYoutube: (YtVideo) -> Unit, onOpen: (Int) -> Unit) {
-              var q by remember { mutableStateOf("") }
-              val surahHits = remember(q) { Quran.search(q) }
-              val (online, loading0) = rememberOnline(q)
-              var submitted by remember { mutableStateOf("") }
-              LaunchedEffect(q) { if (q.isBlank()) submitted = "" else { kotlinx.coroutines.delay(900); submitted = q.trim() } }
-              val (yt, ytLoading) = rememberYoutube(submitted)
-              val loading = loading0 || ytLoading
-              val songHits = remember(songs, q) {
-                  val k = q.trim()
-                  if (k.isEmpty()) emptyList()
-                  else songs.filter { it.title.contains(k, true) || it.artist.contains(k, true) || it.album.contains(k, true) }.take(50)
-              }
-              Column(Modifier.fillMaxSize()) {
-                  Text(
-                      "القرآن الكريم", style = MaterialTheme.typography.headlineMedium, maxLines = 1,
-                      modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
-                  )
-                  TextField(
-                      value = q, onValueChange = { q = it }, singleLine = true,
-                      keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                      keyboardActions = KeyboardActions(onSearch = { submitted = q.trim() }),
-                      placeholder = { Text("ابحث عن سورة أو أغنية") },
-                      leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                      trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, null) } },
-                      shape = RoundedCornerShape(14.dp),
-                      colors = TextFieldDefaults.colors(
-                          focusedContainerColor = TM.Raised, unfocusedContainerColor = TM.Raised,
-                          focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent
-                      ),
-                      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                  )
-                  Spacer(Modifier.height(8.dp))
-                  if (q.isNotBlank() && surahHits.isEmpty() && songHits.isEmpty() && online.isEmpty() && yt.isEmpty() && !loading) {
-                      EmptyState(Icons.Rounded.Search, "لا نتائج لـ «$q»", "جرّب كلمة أقصر أو اسم السورة أو الأغنية." + (if (!Online.ytReady) " لنتائج يوتيوب أضف المفتاح في Online.kt." else if (submitted != q.trim()) " اضغط زر البحث في لوحة المفاتيح لنتائج يوتيوب." else ""))
-                  } else {
-                      LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
-                          if (Online.ytReady && q.isNotBlank() && submitted != q.trim()) item {
-                              Text("اضغط زر البحث في لوحة المفاتيح لعرض نتائج يوتيوب", color = TM.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                          }
-                          val surahs = if (q.isBlank()) Quran.surahs else surahHits
-                          if (q.isNotBlank() && surahs.isNotEmpty()) item { SectionTitle("السور") }
-                          items(surahs, key = { "s${it.number}" }) { s ->
-                              SurahRow(s, ui.quranSurah == s.number, ui.isPlaying) { onOpen(s.number) }
-                          }
-                          if (songHits.isNotEmpty()) {
-                              item { SectionTitle("على جهازك") }
-                              itemsIndexed(songHits, key = { _, s -> "m${s.id}" }) { i, s ->
-                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(songHits, i) }
-                              }
-                          }
-                          if (yt.isNotEmpty()) {
-                              item { SectionTitle("من يوتيوب") }
-                              items(yt, key = { "y${it.id}" }) { v -> YtRow(v) { onYoutube(v) } }
-                          }
-                          if (online.isNotEmpty()) {
-                              item { SectionTitle("من الإنترنت") }
-                              itemsIndexed(online, key = { _, s -> "o${s.id}" }) { i, s ->
-                                  SongRow(s, s.id == ui.currentId, ui.isPlaying) { ui.play(online, i) }
-                              }
-                          }
-                          if (loading) item {
-                              Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
-                                  CircularProgressIndicator(color = TM.Emerald, modifier = Modifier.size(28.dp))
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          private fun ReciterPicker(ui: PlayerUi, onPick: (Int) -> Unit) {
-              var open by remember { mutableStateOf(false) }
-              Box {
-                  TextButton({ open = true }) {
-                      Text(
-                          Quran.reciters[ui.reciterIdx].name, color = TM.Emerald, fontSize = 13.sp,
-                          maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 130.dp)
-                      )
-                      Icon(Icons.Rounded.ArrowDropDown, null, tint = TM.Emerald)
-                  }
-                  DropdownMenu(open, { open = false }) {
-                      Quran.reciters.forEachIndexed { i, r ->
-                          DropdownMenuItem(text = { Text(r.name) }, onClick = { open = false; onPick(i) })
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          private fun SurahReader(n: Int, ui: PlayerUi, onBack: () -> Unit) {
-              val ctx = LocalContext.current
-              val info = Quran.surahs[n - 1]
-              var lines by remember(n) { mutableStateOf<List<String>?>(null) }
-              var failed by remember(n) { mutableStateOf(false) }
-              var attempt by remember(n) { mutableIntStateOf(0) }
-              LaunchedEffect(n, attempt) {
-                  failed = false
-                  val r = Quran.load(ctx, n)
-                  lines = r
-                  failed = r == null
-              }
-              BackHandler(onBack = onBack)
-
-              val active = ui.quranSurah == n
-              val listState = rememberLazyListState()
-              val ls = lines
-              LaunchedEffect(ui.quranAyah, active, ls != null) {
-                  if (active && ls != null) listState.animateScrollToItem(ui.quranAyah.coerceAtLeast(0))
-              }
-
-              Column(Modifier.fillMaxSize()) {
-                  Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                      IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, null) }
-                      Column(Modifier.weight(1f)) {
-                          Text("سورة ${info.name}", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                          Text("${Quran.digits(info.ayahs)} آية", fontSize = 12.sp, color = TM.Muted)
-                      }
-                      ReciterPicker(ui) { i ->
-                          ui.setReciter(i)
-                          if (active) ui.playQuran(n, ui.quranAyah.coerceAtLeast(1))
-                      }
-                  }
-
-                  when {
-                      ls != null -> LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp), modifier = Modifier.fillMaxSize()) {
-                          item {
-                              Column(
-                                  Modifier.fillMaxWidth().padding(16.dp).clip(RoundedCornerShape(22.dp))
-                                      .background(Brush.linearGradient(listOf(Color(0xFF0F5C47), Color(0xFF123A4A))))
-                                      .padding(20.dp),
-                                  horizontalAlignment = Alignment.CenterHorizontally
-                              ) {
-                                  Text("سورة ${info.name}", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                                  if (Quran.hasBasmala(n)) {
-                                      Spacer(Modifier.height(10.dp))
-                                      Text(
-                                          "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", fontSize = 24.sp, textAlign = TextAlign.Center,
-                                          color = if (active && ui.quranAyah == 0) TM.Gold else Color.White.copy(0.9f)
-                                      )
-                                  }
-                                  Spacer(Modifier.height(16.dp))
-                                  Button(
-                                      onClick = { if (active) ui.togglePlay() else ui.playQuran(n, 1) },
-                                      colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
-                                  ) {
-                                      Icon(if (active && ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(22.dp))
-                                      Spacer(Modifier.width(6.dp))
-                                      Text(if (active && ui.isPlaying) "إيقاف مؤقت" else "استماع للسورة", fontWeight = FontWeight.Bold)
-                                  }
-                              }
-                          }
-                          itemsIndexed(ls) { i, text ->
-                              val a = i + 1
-                              val on = active && ui.quranAyah == a
-                              val bg by animateColorAsState(if (on) TM.Emerald.copy(alpha = 0.16f) else Color.Transparent, tween(300), label = "ayah-bg")
-                              Text(
-                                  buildAnnotatedString {
-                                      append(text)
-                                      append(" ")
-                                      withStyle(SpanStyle(color = TM.Gold, fontSize = 22.sp)) { append("﴿${Quran.digits(a)}﴾") }
-                                  },
-                                  fontSize = 28.sp, lineHeight = 52.sp, color = if (on) Color.White else TM.Text,
-                                  modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
-                                      .clip(RoundedCornerShape(14.dp)).background(bg)
-                                      .clickable { ui.playQuran(n, a) }.padding(14.dp)
-                              )
-                          }
-                      }
-                      failed -> Column(
-                          Modifier.fillMaxSize().padding(32.dp),
-                          horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
-                      ) {
-                          Icon(Icons.Rounded.CloudOff, null, Modifier.size(56.dp), tint = TM.Muted)
-                          Spacer(Modifier.height(16.dp))
-                          Text("تعذّر تحميل السورة", style = MaterialTheme.typography.titleMedium)
-                          Spacer(Modifier.height(6.dp))
-                          Text("تأكد من اتصالك بالإنترنت، وبعد التحميل الأول تُحفظ السورة على جهازك.", color = TM.Muted, textAlign = TextAlign.Center)
-                          Spacer(Modifier.height(16.dp))
-                          FilledTonalButton({ attempt++ }) { Text("إعادة المحاولة") }
-                      }
-                      else -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = TM.Emerald) }
-                  }
-              }
-          }
-
-          @Composable
-          fun QuranMiniPlayer(ui: PlayerUi, onOpen: () -> Unit) {
-              val info = Quran.surahs.getOrNull(ui.quranSurah - 1) ?: return
-              val reciter = Quran.reciters[ui.reciterIdx].name
-              Box(
-                  Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)
-                      .clip(RoundedCornerShape(16.dp)).background(Color(0xFF12372E)).clickable(onClick = onOpen)
-              ) {
-                  Row(Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                      Box(
-                          Modifier.size(44.dp).background(Brush.linearGradient(listOf(Color(0xFF0F5C47), TM.Emerald)), RoundedCornerShape(8.dp)),
-                          contentAlignment = Alignment.Center
-                      ) { Icon(Icons.Rounded.MenuBook, null, tint = Color.White) }
-                      Spacer(Modifier.width(12.dp))
-                      Column(Modifier.weight(1f)) {
-                          Text("سورة ${info.name}", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                          Text(
-                              if (ui.quranAyah > 0) "الآية ${Quran.digits(ui.quranAyah)} • $reciter" else reciter,
-                              maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = Color.White.copy(0.7f)
-                          )
-                      }
-                      IconButton(ui::togglePlay) {
-                          Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(30.dp))
-                      }
-                      IconButton(ui::next) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(28.dp)) }
-                  }
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Online.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import androidx.compose.runtime.*
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.async
-          import kotlinx.coroutines.coroutineScope
-          import kotlinx.coroutines.delay
-          import kotlinx.coroutines.withContext
-          import org.json.JSONArray
-          import org.json.JSONObject
-          import java.net.HttpURLConnection
-          import java.net.URL
-          import java.net.URLEncoder
-
-          /** بحث الأغاني على الإنترنت: Audius و Jamendo (أغانٍ كاملة). */
-          data class YtVideo(val id: String, val title: String, val channel: String)
-
-          object Online {
-              /** مفتاح YouTube Data API v3 (مجاني من Google Cloud). بدونه لا تظهر نتائج يوتيوب. */
-              const val YT_KEY = "PUT_KEY_HERE"
-              /** رابط Cloudflare Worker (اختياري): يخفي المفتاح ويخزّن النتائج فيشترك الأصدقاء في الحصة. */
-              const val YT_PROXY = ""
-              val ytReady: Boolean get() = true   // بدون مفتاح يعمل البحث المجاني المباشر
-              private val keySet: Boolean get() = YT_KEY.isNotBlank() && YT_KEY != "PUT_KEY_HERE"
-              private val ytCache = HashMap<String, List<YtVideo>>()
-              private fun clean(t: String) = android.text.Html.fromHtml(t, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
-
-              /** معرّف سالب ثابت لكل أغنية إنترنت حتى لا يتعارض مع معرّفات أغاني الجهاز. */
-              private fun rid(key: String): Long = -((key.hashCode().toLong() and 0x7fffffffL) + 1)
-
-              private fun get(url: String): String {
-                  val c = URL(url).openConnection() as HttpURLConnection
-                  c.connectTimeout = 10000
-                  c.readTimeout = 15000
-                  c.setRequestProperty("Accept", "application/json")
-                  return try {
-                      c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                  } finally {
-                      c.disconnect()
-                  }
-              }
-
-              suspend fun search(q: String): List<Song> = coroutineScope {
-                  val a = async(Dispatchers.IO) { runCatching { audius(q) }.getOrDefault(emptyList()) }
-                  val b = async(Dispatchers.IO) { runCatching { jamendo(q) }.getOrDefault(emptyList()) }
-                  a.await() + b.await()
-              }
-
-              /** بحث يوتيوب الرسمي (فيديوهات الموسيقى القابلة للتضمين فقط). */
-              suspend fun youtube(q: String): List<YtVideo> = withContext(Dispatchers.IO) {
-                  val key = q.trim().lowercase()
-                  ytCache[key]?.let { return@withContext it }
-                  val e = URLEncoder.encode(q, "UTF-8")
-                  var out: List<YtVideo> = emptyList()
-                  // 1) Worker الخاص بك (اختياري)  2) مفتاح رسمي (اختياري)  3) البحث المجاني المباشر بلا مفتاح ولا حصة
-                  if (YT_PROXY.isNotBlank()) out = runCatching {
-                      val arr = JSONArray(get("$YT_PROXY?q=$e"))
-                      (0 until arr.length()).map { i ->
-                          val o = arr.getJSONObject(i)
-                          YtVideo(o.getString("id"), clean(o.optString("title")), o.optString("channel"))
-                      }
-                  }.getOrDefault(emptyList())
-                  if (out.isEmpty() && keySet) out = runCatching {
-                      val arr = JSONObject(
-                          get("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&videoEmbeddable=true&maxResults=15&q=$e&key=$YT_KEY")
-                      ).getJSONArray("items")
-                      (0 until arr.length()).map { i ->
-                          val o = arr.getJSONObject(i)
-                          val sn = o.getJSONObject("snippet")
-                          YtVideo(o.getJSONObject("id").getString("videoId"), clean(sn.optString("title")), sn.optString("channelTitle"))
-                      }
-                  }.getOrDefault(emptyList())
-                  if (out.isEmpty()) out = runCatching { innertube(q) }.getOrDefault(emptyList())
-                  if (out.isNotEmpty()) ytCache[key] = out
-                  out
-              }
-
-              /** بحث يوتيوب المباشر (نفس ما يستعمله موقعه) — مجاني بلا مفتاح؛ التشغيل يبقى عبر المشغّل الرسمي. */
-              // مفتاح موقع يوتيوب العام (ليس مفتاحك)؛ مقسوم لئلا يعتبره GitHub سرًّا مسرَّبًا
-              private val WEB_KEY = "AIzaSy" + "AO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
-
-              private fun innertube(q: String): List<YtVideo> {
-                  val body = JSONObject()
-                      .put("context", JSONObject().put("client", JSONObject().put("clientName", "WEB").put("clientVersion", "2.20250101.00.00").put("hl", "ar")))
-                      .put("query", q)
-                      .put("params", "EgIQAQ==")
-                      .toString()
-                  val c = URL("https://www.youtube.com/youtubei/v1/search?key=" + WEB_KEY + "&prettyPrint=false")
-                      .openConnection() as HttpURLConnection
-                  c.requestMethod = "POST"
-                  c.doOutput = true
-                  c.connectTimeout = 10000
-                  c.readTimeout = 15000
-                  c.setRequestProperty("Content-Type", "application/json")
-                  c.setRequestProperty("Accept-Language", "ar,en;q=0.8")
-                  c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36")
-                  val resp = try {
-                      c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                      c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                  } finally {
-                      c.disconnect()
-                  }
-                  val sections = JSONObject(resp).getJSONObject("contents").getJSONObject("twoColumnSearchResultsRenderer")
-                      .getJSONObject("primaryContents").getJSONObject("sectionListRenderer").getJSONArray("contents")
-                  val out = ArrayList<YtVideo>()
-                  for (i in 0 until sections.length()) {
-                      val items = sections.getJSONObject(i).optJSONObject("itemSectionRenderer")?.optJSONArray("contents") ?: continue
-                      for (j in 0 until items.length()) {
-                          val v = items.getJSONObject(j).optJSONObject("videoRenderer") ?: continue
-                          val id = v.optString("videoId")
-                          if (id.isEmpty()) continue
-                          val title = v.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: continue
-                          val ch = v.optJSONObject("ownerText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: ""
-                          out += YtVideo(id, title, ch)
-                      }
-                  }
-                  return out.take(20)
-              }
-
-              private fun audius(q: String): List<Song> {
-                  val e = URLEncoder.encode(q, "UTF-8")
-                  val arr = JSONObject(get("https://api.audius.co/v1/tracks/search?query=$e&limit=20&app_name=TMusic")).getJSONArray("data")
-                  val out = ArrayList<Song>()
-                  for (i in 0 until arr.length()) {
-                      val t = arr.getJSONObject(i)
-                      if (!t.optBoolean("is_streamable", true)) continue
-                      val tid = t.getString("id")
-                      val aw = t.optJSONObject("artwork")
-                      val art = aw?.optString("480x480")?.takeIf { it.isNotEmpty() }
-                          ?: aw?.optString("150x150")?.takeIf { it.isNotEmpty() }
-                      val id = rid("audius:$tid")
-                      out += Song(
-                          id, t.optString("title", "بدون عنوان"),
-                          t.optJSONObject("user")?.optString("name") ?: "فنان غير معروف",
-                          "Audius", id, t.optLong("duration", 0L) * 1000,
-                          "https://api.audius.co/v1/tracks/$tid/stream?app_name=TMusic", art
-                      )
-                  }
-                  return out
-              }
-
-              private fun jamendo(q: String): List<Song> {
-                  val e = URLEncoder.encode(q, "UTF-8")
-                  val arr = JSONObject(
-                      get("https://api.jamendo.com/v3.0/tracks/?client_id=709fa152&format=json&limit=20&audioformat=mp32&search=$e")
-                  ).getJSONArray("results")
-                  val out = ArrayList<Song>()
-                  for (i in 0 until arr.length()) {
-                      val t = arr.getJSONObject(i)
-                      val url = t.optString("audio")
-                      if (url.isEmpty()) continue
-                      val id = rid("jamendo:${t.optString("id")}")
-                      out += Song(
-                          id, t.optString("name", "بدون عنوان"), t.optString("artist_name", "فنان غير معروف"),
-                          t.optString("album_name").ifEmpty { "Jamendo" }, id, t.optLong("duration", 0L) * 1000, url,
-                          t.optString("image").takeIf { it.isNotEmpty() },
-                          downloadUrl = if (t.optBoolean("audiodownload_allowed", false)) t.optString("audiodownload").takeIf { it.isNotEmpty() } else null
-                      )
-                  }
-                  return out
-              }
-          }
-
-          /** نتائج البحث على الإنترنت للنص q (بعد انتظار نصف ثانية من آخر حرف)، ومعها حالة التحميل. */
-          @Composable
-          fun rememberOnline(q: String): Pair<List<Song>, Boolean> {
-              var res by remember { mutableStateOf<List<Song>>(emptyList()) }
-              var loading by remember { mutableStateOf(false) }
-              LaunchedEffect(q) {
-                  val k = q.trim()
-                  res = emptyList()
-                  if (k.length < 2) { loading = false; return@LaunchedEffect }
-                  loading = true
-                  delay(500)
-                  res = Online.search(k)
-                  loading = false
-              }
-              return res to loading
-          }
-
-          @Composable
-          fun rememberYoutube(q: String): Pair<List<YtVideo>, Boolean> {
-              var res by remember { mutableStateOf<List<YtVideo>>(emptyList()) }
-              var loading by remember { mutableStateOf(false) }
-              LaunchedEffect(q) {
-                  val k = q.trim()
-                  res = emptyList()
-                  if (k.length < 2) { loading = false; return@LaunchedEffect }
-                  loading = true
-                  res = Online.youtube(k)
-                  loading = false
-              }
-              return res to loading
-          }
-
-          /** تنزيل أغنية مرخّصة (Jamendo) إلى مجلد الموسيقى على الهاتف. */
-          fun downloadSong(ctx: android.content.Context, s: Song) {
-              val url = s.downloadUrl ?: return
-              val name = ("${s.artist} - ${s.title}").replace(Regex("""[\\/:*?"<>|]"""), "_") + ".mp3"
-              val req = android.app.DownloadManager.Request(android.net.Uri.parse(url))
-                  .setTitle(s.title)
-                  .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                  .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_MUSIC, "TMusic/$name")
-              (ctx.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager).enqueue(req)
-              android.widget.Toast.makeText(ctx, "بدأ التنزيل إلى مجلد الموسيقى", android.widget.Toast.LENGTH_SHORT).show()
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/Youtube.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.annotation.SuppressLint
-          import android.content.Intent
-          import android.graphics.Bitmap
-          import androidx.compose.foundation.Image
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.layout.ContentScale
-          import androidx.compose.ui.graphics.asImageBitmap
-          import android.net.Uri
-          import androidx.compose.ui.platform.LocalContext
-          import android.webkit.WebView
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.clickable
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.rounded.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.graphics.Brush
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import androidx.compose.ui.viewinterop.AndroidView
-          import androidx.compose.ui.window.Dialog
-          import androidx.compose.ui.window.DialogProperties
-
-          @Composable
-          fun YtRow(v: YtVideo, onClick: () -> Unit) {
-              Row(
-                  Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically
-              ) {
-                  val thumb by produceState<Bitmap?>(null, v.id) { value = Art.remote("https://i.ytimg.com/vi/${v.id}/mqdefault.jpg") }
-                  Box(
-                      Modifier.size(52.dp).clip(RoundedCornerShape(8.dp))
-                          .background(Brush.linearGradient(listOf(Color(0xFFB3261E), Color(0xFF4A0F0C)))),
-                      contentAlignment = Alignment.Center
-                  ) {
-                      val t = thumb
-                      if (t != null) Image(t.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                      else Icon(Icons.Rounded.PlayArrow, null, tint = Color.White)
-                  }
-                  Spacer(Modifier.width(14.dp))
-                  Column(Modifier.weight(1f)) {
-                      Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                      Text(v.channel, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = TM.Muted)
-                  }
-              }
-          }
-
-          /** تشغيل الأغنية الكاملة عبر مشغّل يوتيوب الرسمي المضمّن (يتوقف عند الإغلاق). */
-          @SuppressLint("SetJavaScriptEnabled")
-          @Composable
-          fun YoutubeDialog(v: YtVideo, onClose: () -> Unit) {
-              Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-                  Column(Modifier.fillMaxSize().background(TM.Ink).systemBarsPadding()) {
-                      Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                          IconButton(onClose) { Icon(Icons.Rounded.Close, null) }
-                          Text(v.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                      }
-                      AndroidView(
-                          factory = { ctx ->
-                              WebView(ctx).apply {
-                                  setBackgroundColor(android.graphics.Color.BLACK)
-                                  settings.javaScriptEnabled = true
-                                  settings.domStorageEnabled = true
-                                  settings.mediaPlaybackRequiresUserGesture = false
-                                  loadUrl(
-                                      "https://www.youtube.com/embed/${v.id}?autoplay=1&playsinline=1&rel=0",
-                                      mapOf("Referer" to "https://com.tmusic.app")
-                                  )
-                              }
-                          },
-                          onRelease = { it.loadUrl("about:blank"); it.destroy() },
-                          modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-                      )
-                      Text(
-                          "يُشغَّل عبر مشغّل يوتيوب الرسمي، ويتوقف عند إغلاق هذه النافذة.",
-                          color = TM.Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp)
-                      )
-                      val ctx = LocalContext.current
-                      TextButton(
-                          { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=${v.id}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                          Modifier.padding(horizontal = 8.dp)
-                      ) { Text("إن ظهر خطأ في التشغيل: افتحها في يوتيوب") }
-                      TextButton(
-                          { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/watch?v=${v.id}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                          Modifier.padding(horizontal = 8.dp)
-                      ) { Text("للتشغيل في الخلفية وشاشة القفل: افتحها في YouTube Music") }
-                  }
-              }
-          }
-          TMEOF
-          mkdir -p app/src/main/java/com/tmusic/app
-          cat > app/src/main/java/com/tmusic/app/MainActivity.kt <<'TMEOF'
-          package com.tmusic.app
-
-          import android.Manifest
-          import android.content.pm.PackageManager
-          import android.os.Build
-          import android.os.Bundle
-          import androidx.activity.ComponentActivity
-          import androidx.activity.SystemBarStyle
-          import androidx.activity.compose.BackHandler
-          import androidx.activity.compose.rememberLauncherForActivityResult
-          import androidx.activity.compose.setContent
-          import androidx.activity.enableEdgeToEdge
-          import androidx.activity.result.contract.ActivityResultContracts
-          import androidx.compose.animation.*
-          import androidx.compose.animation.core.tween
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.shape.CircleShape
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.rounded.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.runtime.saveable.rememberSaveable
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.graphics.Brush
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.platform.LocalContext
-          import androidx.compose.ui.text.style.TextAlign
-          import androidx.compose.ui.unit.dp
-          import androidx.core.content.ContextCompat
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.delay
-          import kotlinx.coroutines.withContext
-
-          class MainActivity : ComponentActivity() {
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  enableEdgeToEdge(
-                      statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-                      navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-                  )
-                  super.onCreate(savedInstanceState)
-                  setContent { TMusicTheme { Surface(Modifier.fillMaxSize(), color = TM.Ink) { Root() } } }
-              }
-          }
-
-          @Composable
-          fun Root() {
-              val ctx = LocalContext.current
-              val audioPerm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-              fun has() = ContextCompat.checkSelfPermission(ctx, audioPerm) == PackageManager.PERMISSION_GRANTED
-              var granted by remember { mutableStateOf(has()) }
-              val ask = remember {
-                  buildList { add(audioPerm); if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS) }.toTypedArray()
-              }
-              val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted = has() }
-              LaunchedEffect(Unit) { if (!granted) launcher.launch(ask) }
-              if (granted) App() else PermissionScreen { launcher.launch(ask) }
-          }
-
-          @Composable
-          fun PermissionScreen(onAllow: () -> Unit) {
-              Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                  Box(
-                      Modifier.size(96.dp).background(Brush.linearGradient(listOf(TM.Violet, TM.Blue)), CircleShape),
-                      contentAlignment = Alignment.Center
-                  ) { Icon(Icons.Rounded.MusicNote, null, Modifier.size(48.dp), tint = Color.White) }
-                  Spacer(Modifier.height(24.dp))
-                  Text("T Music", style = MaterialTheme.typography.headlineMedium)
-                  Spacer(Modifier.height(8.dp))
-                  Text("نحتاج إذن الوصول إلى ملفات الصوت لنعرض أغانيك.", color = TM.Muted, textAlign = TextAlign.Center)
-                  Spacer(Modifier.height(24.dp))
-                  Button(onAllow) { Text("السماح بالوصول") }
-              }
-          }
-
-          @Composable
-          fun App() {
-              val ctx = LocalContext.current
-              var songs by remember { mutableStateOf<List<Song>?>(null) }
-              LaunchedEffect(Unit) { songs = withContext(Dispatchers.IO) { loadSongs(ctx) } }
-
-              val ui = rememberPlayerUi()
-              LaunchedEffect(ui.isPlaying, ui.controller) {
-                  while (ui.isPlaying) { ui.syncPosition(); delay(200) }
-              }
-
-              var tab by rememberSaveable { mutableIntStateOf(0) }
-              var expanded by rememberSaveable { mutableStateOf(false) }
-              var yt by remember { mutableStateOf<YtVideo?>(null) }
-              var section by rememberSaveable { mutableIntStateOf(0) }      // 0 = T Music، 1 = T Quran
-              var quranOpen by rememberSaveable { mutableIntStateOf(0) }    // رقم السورة المفتوحة، 0 = القائمة
-
-              val list = songs
-              if (list == null) {
-                  Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = TM.Violet) }
-                  return
-              }
-              val byId = remember(list) { list.associateBy { it.id } }
-              val albums = remember(list) { list.toAlbums() }
-              val artists = remember(list) { list.toArtists() }
-              val current = byId[ui.currentId] ?: ui.online[ui.currentId]
-              val miniTint = rememberCoverColor(current, TM.Raised)
-
-              BackHandler(expanded) { expanded = false }
-
-              Box(Modifier.fillMaxSize()) {
-                  Scaffold(
-                      containerColor = TM.Ink,
-                      topBar = { SectionSwitch(section) { section = it } },
-                      bottomBar = {
-                          Column(if (section != 0) Modifier.navigationBarsPadding() else Modifier) {
-                              if (ui.quranSurah != 0) {
-                                  if (!(section == 1 && quranOpen == ui.quranSurah)) QuranMiniPlayer(ui) { section = 1; quranOpen = ui.quranSurah }
-                              } else if (current != null) MiniPlayer(current, ui, miniTint) { expanded = true }
-                              if (section == 0) NavigationBar(containerColor = TM.Ink, tonalElevation = 0.dp) {
-                                  val items = listOf(
-                                      Triple("الرئيسية", Icons.Rounded.Home, 0),
-                                      Triple("بحث", Icons.Rounded.Search, 1),
-                                      Triple("مكتبتي", Icons.Rounded.LibraryMusic, 2)
-                                  )
-                                  items.forEach { (label, icon, i) ->
-                                      NavigationBarItem(
-                                          selected = tab == i, onClick = { tab = i },
-                                          icon = { Icon(icon, null) }, label = { Text(label) },
-                                          colors = NavigationBarItemDefaults.colors(
-                                              selectedIconColor = Color.White, selectedTextColor = Color.White,
-                                              indicatorColor = TM.Violet.copy(alpha = 0.28f),
-                                              unselectedIconColor = TM.Muted, unselectedTextColor = TM.Muted
-                                          )
-                                      )
-                                  }
-                              }
-                          }
-                      }
-                  ) { pad ->
-                      Box(Modifier.padding(pad)) {
-                          if (section == 0) {
-                              when (tab) {
-                                  0 -> HomeTab(list, albums, byId, ui)
-                                  1 -> SearchTab(list, artists, ui, onOpenSurah = { section = 1; quranOpen = it }) { ui.controller?.pause(); yt = it }
-                                  else -> LibraryTab(albums, artists, ui)
-                              }
-                          } else QuranTab(ui, list, quranOpen, onYoutube = { ui.controller?.pause(); yt = it }) { quranOpen = it }
-                      }
-                  }
-
-                  AnimatedVisibility(
-             
+          F=.github/workflows/build.yml
+          if ! grep -q '^#TMEND$' "$F"; then
+            echo "ERROR: build.yml is truncated - paste the whole file again (the last line must be #TMEND)"
+            exit 1
+          fi
+          sed -n 's/^#TM //p' "$F" | base64 -d | tar xz
+          ls -R app/src | head -40
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TMusic-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Publish APK as a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: T Music build ${{ github.run_number }}
+          files: app/build/outputs/apk/debug/*.apk
+          fail_on_unmatched_files: true
+
+# ---- مشروع التطبيق مضغوط (لا تعدّل ما بعد هذا السطر) ----
+#TM H4sIALeB92oC/+y9a3Mb15UoOp/5K9ooxem2qSYAPkRRphTwIYsTvoag5LgcF6sJNMg2ATTU3eAj
+#TM CqtGsiQrOpnJ+Nb9cmu+3MSTSJYtO/IjHudUnVs1vwL8On/g/IW71tp7d+/dLwAk7VHOiLZIoHu/
+#TM 99prr/fy7SBw2ju+ueNZ9aZt7gX+3533TxF+piYm6C/8xP8Wx8tT4Wd6XipNTk39nVb8ux/hp+sH
+#TM lgfd/91/z59Os7vjtFestrVjt+x2oN0Z0eDHszuu7wSu59i+dkfbcd2dpq0bV7SWtW+356GgZzXx
+#TM OwObdWpl3fUCfKodjxyP1O2O3a7b7drRhu27zW7guKfuhhr0XDdY99wP7Fpgtq2Wrc1qhc2Vru/U
+#TM CiNOu9bs1m29MGN1OgVj5O9e/Qz4s911mvUf8vAPcv7HS/HzXyyXXp3/H+/8+/w8OnW9UHNbptWu
+#TM e65TN+E0NZ2ahWe3YGj7tufDJ60wbV4yxwsavj3SGlbTt8ParrdjfmAH254FrZp7btB02qI5uYmy
+#TM WTTLpSHaYAM1YXSAMux+TR2/QgGD/fCT3/Hcju0FgIb/C85/qZS4/8dLl16d/x/jR5z0rm9X2Mdf
+#TM zAZe1x7BQ8iB44P9luXt+LMXf9E6HN8Z4Qey5tZt0w+Omvas22g4Ncdqvjp0f3M/5o4TODtt17N/
+#TM uD76nf/iZOz8Fy9dGn9F//9I+09nfGyECMGxkaZbs5rSdTBiOnXbGht5w3Rar873/4H4v9MZ+6F5
+#TM gD7nv1yaSNz/U8VX9//LRv8PSOMPR8YDpT7Cq/IxIG/vd6waMfg4mKCFTD6OpUAFsK7TtKv1PSgx
+#TM PknP6nbD6jaDebfdcHZ4Q/gjTWCpntUg/rScNmuwPBE+A8DYsQOlH/zhjMc80D/wohR/vsplEyWz
+#TM yJo/pt90yK7bVtD1SNbBVwBKIrnFC/GprXVwwL40D9/tejV7Hl7DXLadphMcQc2/t/atW6xX89bi
+#TM RnVpbXWrdCk2/iEqsUGwnQrHoAH5t0kt0awuFUgaE8l3SHTDNr3VaZJ0h9ZbL/B9PYTd9uwZ/HVx
+#TM LzicKZmlSVgbI7+OVQucfRjxjPhwka8Y1L8M3Gdq9U7TChqu11L6ZrX434vbbmumXCxPmCXgG0sF
+#TM w+g3dKpmdp2ZrlMYsHDLCmwP6OHxmfDTsFXDmhedGmzDRfswwOWu92unZdcdC/qlP1DLhSU5sj1Y
+#TM tAHWXK3s2z4CyWBVO1bTDgJ7hv/lG12kiq+Y8Zf7/ve92lgLkPQY5wBXrLbTsP3APGw1f4z7f2qi
+#TM GLv/J4rj46/u/x/j561rsMni6pqlS0sDpO7WnfbObKEbNC5OF65dHXmrxWFCg+Jtf4af+9nCbhB0
+#TM ZsbG/Nqu3bL8kHAAdDZmdfbG4K4bE5TBVcIgb3UBr1wE7qLlEHrR+OsZvPdnBUIxowLm0urm4sbq
+#TM 4mZBGzttExuLlYWtlcWFpcpW5ebC0tpZm1r8BQ6psrxV3VzbqLy9WAjrtaxDIBhuifUcL5+hq+tr
+#TM G4tvb6zdXF3Yqi5u3FqaXzzXxviCrC9X3p2rzP/8DG2vr1U3t1bXNpeuL81XNoGgqFJjrDWJBIvI
+#TM Mt6i1Wy6B3NWba/bmS0gHVRIFGla23ZztrCpcVVP/L3f7XRcL/A3gmZWEwHAJgz8Z2EVFFqNbeJT
+#TM c8Hed2r2AiMfzVW3UsOBzlkeB1c2BU6CxFbCXAGkWeHvIhCwD3FAdp0PJ2qH2nLacJEHFxtOE+53
+#TM 9V3YV+aas8omK2OuVJZWw11TGoHltndc7yi/GVHKXK7cXJ2/sbiRaOytsYzhvjUm1kR65tseLqbS
+#TM QmzF1oEa2Yb9rrKihdSysQVMLQNUnr3jud12nTe1edSBDoh0EZ2c59IL4sjkVJG5gl+r7IuYzRDL
+#TM x9eKn7gx6ZAAsh0T2PbqyI96/38ArMEYom7GIeGo+DHZC364+3+8WL4Uu/8nJ8qv+P8fh/+Hc2Lt
+#TM 2JrKF4+MAKEPZ1DLZm0A+bFPBCADlIcD6u54Vmf3aIDCdcvbm3ebrlet5TbvdduBA/A5T9+t7WZ2
+#TM 0a5jUvdOzTep6bySAfBb5ib8quJd0bdkwwV0eh1+vWM7O7tBXvlu2wlMH1bY3UZTBm1zhXPP+1ZT
+#TM W2qjrIFGpxcPr18vzhfnSyUjfF/teg0mGYnKlCbhv/mozIbl+HZdLQL/lS9HRW45bpPY+ajI5fmp
+#TM uevX40WqbkMtNnfp8oRcbK7ZVUcztTittLPYsj2rqQ5nfGFhrlKMyrztxgosluemp+aiArgRSoHr
+#TM 5evF65WowEo3iE25MlUZn5sm8dLPJOBodNsaMxohsNWBt0YEPaNJhTTd0C5e1W7CRhl8bxRY10M0
+#TM XosgFDqPwayuXAUdz2lZHspfNldMtrijmtteDx9TTXOuCedxVKmJNxm76VhlgBGsORd7jGukVvRD
+#TM YIHXHHKwZlV+nlntlgUTbgesFIMpqbLyllY/bMOImgvCI48Fwy/qyuzaVr3ptG28ULstLCiOnd4I
+#TM TxQ8jo6XuXgYeNYcQM2ohkWqzq9wNuNFOFeGOpnACZr2MkqvBmo40Wa5nNHmEKOt2i0n0XBpKtnw
+#TM tls/ymhX1JpIr1VtASWdWYnmkLY/HPqhDP9Eb14JbP67yn/S6L+q2945G/nXj/6bmJyM239Nli+9
+#TM 0v++RPSfyfEDEE7096bn+LlFDuM0kNm2AxOqxR93PHffqdse56cCYOtGRupWYGm1puX7GoKfHt7z
+#TM wJVpy/BklL4RIp7RqoHniEeWFzh+ED4LK1rN7W4rVhQfLSkN1rsesWD8WVjbs1tuYN/0mqKFa4Ay
+#TM 291mM+w09Z2mjY1pJ/d7n/T+2nty8vDksQZ/7vf+ePKw96z3An9rJ3dP7vW+CzuquwftpmvVU5rT
+#TM cn+go96L3pPe0953rJNn0PxXJ49P7tPXkwfw9ouTj3vfati9dvLo5He9z3tfjhgS8dn1nBkNtkjb
+#TM sQMggWajaV8zkVy8gy/NjuX5to6k0bF2bUaTAMI8cILdSofUQvWluh7tqFnp1h2XbbEZys7m11Y3
+#TM F1c3t25uLI3CzkbUHKynOhC2wKcbRVS6IIi9sTHi5cdQp+K1reaYhcMbI4CArgrGqAAOoh+RZsRN
+#TM QVD09VpwyPs7DAwAFAC3t/DNVWkl3S7eqa1ugOQkllhrsDJ6NEmgHX2ammcdrTUikihj1baWFkaz
+#TM 3m0ubS4vZr6tbGwuVTdH+3VQWZ67uTKa+zZvDAs3N0jyxykIMUvfRrKkcOFORrWl6tbKzerS/PFr
+#TM s0WtsrqgZZYUHRxfHcdLgquCg0OBd8jKfB8Qye2u7R31Xc90KMRNGcVBj7IjHLaSPQNa/GNtfm15
+#TM ubK5qK2uzVeqi2x0xjU0q0NdL/ATYVMHuw7yGDWz5e7bm+4qwJFuGAQzb85K+C4k0kw4BoiP9CIA
+#TM Jn1jmEEvGQj7BTj0X8KBfqj1vgck8whRTUEtWGYFAdk8xLda768nj3svNMAK3wMeenRytzCa7JLX
+#TM HWd1RYs0kAlD/jYp0ZaSGtmzg67XxnmRujhC6RU8W3oSnaO8LRebM4jCUyifO0Npm2ro6c2lVKXD
+#TM HT0wA5dG5+viaNPXqwDDyGt15o5gN4F/5+hBOzZbVgce6Q5Q974htjkaOx5xnxfCevQQqtXhj9Ou
+#TM BRwhsCUJl5FaMxuOB1MxWGem0wDesL0H7RR6nwCCfwr79iBlJ7XjaC+dhqbzcZg+MQPADRhiaO8V
+#TM 39fsJgBoCBgERdDWF3B93IeHjwiSfMEVmD6JZcUi4AKbTffA9moWoFf00khZTtZXtJ70HRaUGlUX
+#TM VSwOX9M2X1Kxqex7NIoF268BloftZfVpe9k8+UgarUBv+QzGDAELEp7G3YEC2phWApRiACqBudiV
+#TM YNm2oD8uoeBwzCqbaF1gBTpSymY3cJrmMhrM2ebN6qhW+El95ifFch3XDNqcKuLfn8Dfl5ij6kv/
+#TM w+KfkfzvS/9PJey/JkvlV/rfl5b+TxL3oWB1zgng9PZ5fd2qwTUaFwObLrxHI6n4c3bMvO68Vdu1
+#TM U1+ioEO8oJOJzMaNIOjc3FiGEbdtUuwkSsBb8YzZPJGlElxYTtv2zQXH71gBdOn5OaWQ2hSLMjL2
+#TM xhsa4OPnJw9OPkbKGwh/xKO9TxlNHqJtINSfaUirA85+DAwAvH8Gl/cDrPM91PiNdvIhfv5j79ve
+#TM l1D4BavwCWDpLwnNP4a/vyWsr/X+DG1/CEU+xe//Bq09631qam+MCQEzHGCO8jqes28FNiM/cTEB
+#TM /fFCgCP5Ar/FLmS2U1f18bL2BmDH8oQhWaMB4eJ5wLVpiGQR4QIBu2cfSZd5F65e1gTS7/TA3D4K
+#TM 7Hm32w4I33I7u+PEyEipDGh6Vrth+btVO6ARCdJZLsn4k/nMmYi7X8ylNDXMXCTKYYjZ0B+Eg963
+#TM QIqxXUGKSzBnOmzStwAWH/NNhf1/BLct/n6KG/gZbP//6D0x+m0uk9T6yObQyNla6N2IcTTEmK9J
+#TM s5WWDOk3LG8IvopfdE7AN0XcktswZwnMdelgmEtr8lqSdNQ7ij0JOR5oB44c9Wm6MPLoaALxYPla
+#TM 8sTGm6khIsKXm07LZlwW3tzFK/DGs6269HgSHifq0+CgrNPudJHAta0WJ9EVzGTWbfRuYQU4l3ms
+#TM NRzgFZusAaDf+EiI7pH7OIazBauj6QA0i4c1m+woYZUYFx+VPVbItG3tNcbnG8oewTBxvUa1bUPa
+#TM Q9qnbRniEAQ6tr2nK1INCQRm2YmnTQ+Z2wQU4VuZwR0lmnmGuJJUeIoaxYKCLs4FKZytXFhz2uLM
+#TM G6ICLoQKg63OOUBh1DUJFKIlTxaNA61U7bTAex4A/GMBsQqg4oe4BVxEuqeF9bBZXfj51tLqpnZ1
+#TM VitfNlKZcpSfbO52W9tty2myxex6zqiGN7c+MQ2UMvwyGNdtpPeb1ixuxFK0DOEuhZx3vxU5j5ML
+#TM oBkCUi08tTKIjyL8GmwaHNRNq15Xz0zifLc6/IT/kMxDX/p/+chDyu0sLEA/+4+JS5Nx+n9q4pX/
+#TM 998A/U+ktOOa152mKrYnqFkGCllngvqWveIrontoJCRUEhV9qoVKYSGuCdu7ykU5R+2aDbfcnOs2
+#TM basNV5lMGG5WAYFu2Dv2oV4oFH75nv7L+p3S6PixMYOfyseGfm3mPXPm/fC5ce19KGgICh7orBe9
+#TM TzQSon+NX7XljXkhSH/W+wo+AVGHFPgjJk6/j6KYZ0C0P0SJ/uOTj5BYfwTNMBIPhTO9v7AGHva+
+#TM ReoeeADt5KOTR0TM0e2NMmo+e886kKg49lASW+By1hMC5miJJClzpwnnun/RhutpOq43XsbQO9xF
+#TM ULNm64VfeoVRDZbGpN1AQeUd5WKG09PqoBxls2rC3VKvNJvUkGEGLvamG0rxgFlyQGHRAxZmPcB8
+#TM W/HiUBYLxN/RRU49m46/6gaLrU5wpA6OSBtWBGa3CHgZEHlLFsTKHTVwjUwSR91C8t5/b/z91IIt
+#TM nOvBrt3W9AYQOe2dYBdviCLKqeAWL+HfBsx9qY2XKrIb8LScfHqF3QbsubVn6+NG+D558bIdf3NW
+#TM OleppIE6hdL7uAkoosU+p4pbgFy1N2OFykqhEi/ij6aTHmjs5DRouVES+Z//z7NCynDVG1y6OCMK
+#TM 4jU9MBHzBv47QNTphfcKhvb661pgAinKH70vHiHyQR8yvTBTMBKbzEBcWRsgJwIjdl0rQmkcAa1p
+#TM DHz4+WOvVGknw2Ha8Sj5a7HWaTa8Dg3DBGzZeYcE/KwSrZfP28fKFJ6C1EqcX2XVSa8QY9NJgglN
+#TM xShyITQ3uAwVfxD/6td5WRMr+QuOB8eqSa3D4WLBMeAE7NUdz2djKVwAzB4cBgUjYiKQUMvqUKCi
+#TM a1LPYoCkwSNIXmqwuduHTPCrHV9jpC0pOogz0GdmJHQHz+R6hGiUfZGZHN/az1qQUU3Gm3BM1bEd
+#TM eE5g0yCgmBE2WLdhQNlrfCfWCi9u/MBk2csj/41ZbJ+GEOxD/5UmLsXlv5cmJsqv6L+Xyf6XW79D
+#TM sZbbZgrQSgAnbbsb2H5W6dD90Fw8dNfpU1bRNLP6Ycpy8BwZYWRkDGq1GS2lsG4kBKOeJrwelQrC
+#TM CIPhIUVk6LbnAbsFUWNMptJB7jR8pRA1bEmgxXBRmNzb9vRg1/HVyxMmG8RWW499NxcWr1duLm/K
+#TM N5Nc/QasX9OmSnPAALcAO666jn+kpxQnL2VpvHw1YLDycijjHeUTMpTKx6lL9bYd8CbI8tZzm03b
+#TM W2o3XHW5ic2IXiIu5wNJbXXB9qH0kboDfOPQQhyQOAdDD7A36SqvaOFHiT6JZqsIoMRuhv38CHz5
+#TM S4X/be+mcwYJQD7+L01OTsXt/6ZK5clX+P+l5P/heRs+YZSD4ZSESaeNN/L8JIQrP1OwZzfp2fF+
+#TM WcCDPjcYoZulwG4NUm7FDiyUUfQpO8QNFyG4fsU5Stx092zAfj+rEh8v3XJ4NlWjtBRtX8ezG8i4
+#TM IneApj27lmfX1+Gh7dntGlwphaAFfD5vwVxZW1jcWt9YulXZXOS8AV6NEcrWto+ESAEGFNhrjbdi
+#TM 07p2VVdluWI4cCFFDXY96D9YqkvtIdnN29QvlpaNsLDj43RRM5joXOdclShKQUURkac3W5RaFSaf
+#TM AxT1d7uNBnB2fbv37A5c+1I5YOtFUX7hbyyuL1Y2t2ih1yJ/GaxbgxXxUzpBHmqDvQVWVVI05piX
+#TM clNQePPNye9Q64hfUW6FcqjPe19yvTS8gepCTf2c5FT09Sk3LPr45O7JR70noeaRjBzbJDBiatoV
+#TM q8MVx8LOMRrfE+jyc2jzI633h94XvReo7P7ryWNmuHRf7n9GK0F7bNB8EL/VLobPvkYd6sk9TYfn
+#TM XwuNOTb7DJr4jNqjck9w7ih8O7lvSEOGzXa89F0ppcPpCDethba+RgkfDglFg384eTjDhySUvI/o
+#TM 6x+iVfwc9fa48s9639B0YaQk9dOLMB8cJW7K497vtTFW4Sn2AX8/jYDhNgAnetxYu+nDLuYfL6pe
+#TM OTplbYBEYJi9pfphenXCKYhNUGhV4KUBiYR2VEttFMT8Aw7C5K99E/AWVKjbh0bOkhOjbwcbrJLu
+#TM zGjQh6GoscOxzWrOYP1J3eHAAV2hcV2nGx9/1DaXmqgUrSydUY6kkFSTLXAkIInWiRtUFtgRZ2JV
+#TM ZltpmH6nCcMpjMLHltVZdYNVVDkxGRJJ59Y8fBLJQuRhdLr+LhuGLgku5MUilDKLIl6U/0IpQ3tT
+#TM PDeZczJ1hoosp64dM0mOXipnr1piNqK5D1wHbivxGmaUuowkaA+Ri3K00DLmWzgZf4WjdHtGPmYz
+#TM 0SFjwvdP4IDJrTD8gsjq5JEW4ZUQCcir5rbx+tfpukWFOTe3p4m4nqRbkJYS5Ya8AtpSCn09yhTT
+#TM yigSztsovIzJLuluRtGzKM/AYKagsmUSHpjVOghLHBxKKDtDqXEIHgBPxWRdQgJq1XL/qtH1PAtY
+#TM eDkuxr2TPcbiFaVftVkxWRWwhcmA3KkTXKHlZDtiKICuaG+P004o0yH5QBoStx3aB/EreFm8yrAF
+#TM AvgQFMf8rtXeset6SILIwKEhE/yzkE2KyJRZiWQ5zuojpEM3YbkY1cKhB55xrhg/ElxaPgomYrhQ
+#TM wBx7jWDJJ8jCeyxtLq5sbW5UVqtLaD6/tbFYqcKfys3NNe3Xv9aGq4WxQpaXqptb8zcqq28vLhh0
+#TM pcpB0GiK8snCsZt8y8XZ4kHPVCBHld46J9x0I0XZHlu5UMSD95HYoY78kC/VbFbTsQarjL5bcev2
+#TM Yhsvu7po1U+8UQBAEIazWrJg9vg3iErEoqIbL3wiNlmQkrNa9E4FdmzLCgKrtqvXOLhERLgMJhLx
+#TM DnxA9BgNEcRR0MVxkTRtEjjXIuCOZCPh3GtmcvbSHcTngWYuYiYjMYCpmfzwr+RBjkRsZ4CNtDR1
+#TM m5YmfSFQL4FOGDnTV1YtFArJ+gil+4xuGGYLuRJEbGKqou6ViBOh1+Jb3CZ92UhHdjgWBxfR59Za
+#TM QmSHyxjK66KJoWDwpufoPtrhGPiNlQZgN1ErJC5wQ62isMO68i3qBAtuom8etEU+evSEW/H73M5f
+#TM PDtwvT02ELTbETJEqVchVYzs3AAEaatkV45RzUEqjw7OqHwOw5MqZLhxDXaNuz/zbYZbMOVCx+4i
+#TM RV7izqfXkZoZa8Aehv5zkX0QY5reg5dO/X3a6bhlXDRyyaoo5Wip2EY6z+FWwsb7bOBAUuozMwge
+#TM Bl+niGRmM2vXnZrtG0i9S00BzdexPBKX1kxa9iQN95jYm4+5o2HIEAlW6CkQZ1+KbzozalW4HTKY
+#TM EM++hL9Q0GAk4CPOwZIdxYven4QFxhfIHfZehFSdAAoi/XUfaRABB0h/IRFC3zXyfhly98lPqd1w
+#TM oRxjLah9X6Kk6IF2UWPuWCnVOUcRtiCYk/ciViMyNsDJ3MZTTBOw+N+u16xK84Kv4axGNQqRJSs+
+#TM 8w6+fPjZcMj7EaBU58MBQMY6Uadhf0ayGYE1gLy94M9csAoZRQbHGYUQhi7cwYUnP6NjWN8LNM+C
+#TM jEzEiLFICu5IVWmQOanjt8Lt2LX8OctvWU2LbaVaFE8N8k7UDOKbFNILmzM0tOi7zZqAczSqlej/
+#TM ggruhdjwyPLGQrObkmnSdC1YaD/WmjWqRZ8K/DRduMPGX3d2HGBALeNYbvw4bqbjIfxzwxl2KLS3
+#TM 6EAUGTkvPSdYfhNwWDi3EiujYIdUnBRl8mCFJLolJDFjwq9M3EVLzw9xhLDo6SkxFh6uwN3ZwYxF
+#TM FimMUu5pjr1DWsfA+7hjdUlZxAxYAt42mtSGDbfJwAEa4DTxFaVt37b3hLenVAkGvO+4XV+qeDG1
+#TM 5npU8FgSkth7kYdbbDasHryGxZBoD4Dm49hicMo3az2C9K1+Lf2FvCS1o1rTZoRuPnGkHqlABRtm
+#TM bqU8TTPZTocuNLFKeVNZXh6kASiW0cDa6mK6nXJGcQnOY0ZRoTYxEakICAi7tW17oZzfmAll/pI9
+#TM YC1AMZisJxHUZeTb7zB/fmoO9lTWHMhRvkMdAhsVGtmz8Sw2GmgnLgdFkm3nYoxHiNfJbkZWYbAn
+#TM ihqJPYpp7GdmSMVhokrSMDhuryC1LaHyhsK8ALfUbc+jBTdzCe06JueMGuShYNBxDbUcTE2EbzCM
+#TM 4+KhXesGLo1YwqJumy2BzdoT7MSVxIS5Ovl6F+N76w0jzeqs67x8KuO++t9wq05vA56v/y2Xk/m/
+#TM piZLr+y/Xyb9b76DZ6S4tdpOi/Gt7JNNYc0qPsljBqhF+txsvXAD452xkvNWe9/yBym51IIJDlIw
+#TM irQ2SOka4My93IiDUmFAbm43GGxm/q7Vsc0NfGDX510PcFsVH/UNm2hSqHhzCX8PWthj3eSMLArK
+#TM +MbZNPqVprPTxtjxeYXgcncajp0bnLGOFupWs7Nr9S0Fm9TJjQhpuy078I4UF+Lc0JFvDFSq2W05
+#TM batdG6zNfRv9kxig3qLPedU4LPGYN1UMP3AehhSnjmhJ5SmmMkUTpG0eovzavu01mu5B36CZC52+
+#TM ReqdQUJvxovwnAXRfqyzB+fqHK6UwkO1a1rbfjbNBxyuHjlfXqPwFXAS3+I+mFcHov9SSDuZIOl4
+#TM br1bs9WGqVdB+2P0B/IrjYKekOk4KxM+UQhCiggab4R7lo5qkeLmOBYXZh4F5HzpyQHIqtUoNifd
+#TM IczvZ3uHfxW+OvdZ5Bvksb+gmCVkRnDy8ORu72vl7V/JMOCu8MT/sPcZmgs87/0FhQ3oco2lmQMP
+#TM WSw8Z88ekbfPRyeP8Wvoc/8FFPqLMEr4Dgp9zyN58fBaH1KYHaUlNLcQ3TxGM4aT30gOQQ9Q+Qnt
+#TM /B6LkGBLFuzuO/tOfROoMH13RrvedC0UbfFPBl8QOawJSdp9SS1uTk42gFM2L082IuuCfdTMmdPl
+#TM RmSPE8Yh3fX39d1RbAnWnVUJ4xaFuA1YuqvQwnixgX4a+/RlAnqALd/XLmLjxYnGlcxWVeK4htDA
+#TM 7EXQKCTauPS9CoWGfF9xz1HUePIxlyVCra/xlZAhPqA2P4ZSn2JTX/eeahhMAbblU7lL/CXsVYRM
+#TM 8xOSSH0pjDxeUACHL08eJ/ap7tLKBCwM7XYYNIBv0TVpj5ATn5iOtowH8GQVzBrZDRNqr7NH+vao
+#TM 1qb/I80ZaY/x6C+1gwrGEdPb2htam72kFvHYrTuHwJfqnUMSSrXpN/vQjpo5wJClCE6snfEpYHFI
+#TM dJnxfCfj+XYz8SLsA3Y/9lJyPquhCKxzKKOSBO3JgIiC7m66N6q39NooNqq6hcGD98rva28B9JUb
+#TM qOHEByX2oDQNwImyB6fdtRUe9gBPDC/5hsbaUMWAaD6Bz4vvU8CHRuiupVifjEvBsA7ec95Hv6SD
+#TM IFKD8UcZU/Psul5DNyypyk5+lR3PRqY6Vmm7mV9rG5C0Uuk4xAHbmOQDhVDKkyoS5ogvGtGWObhl
+#TM RQ1Jv6YGGx33DMRzz9YAln6yAZ3pB+9BrTdxlbSfQBV8xR+V+JOYj18NkErYPyIWeTB+7YoYrqPw
+#TM 2yS3xBew6QgCB+/ht/dR3gkblwgywL+zU+vxsmNhrTGtTOhzJ/MNLHf6K0MgNYFdHsB/j08+7n2l
+#TM 6eJ2MBDncHwXXmE8aoiE4PDueYzlAf+w6wVwHKA8iifzKcV+Q0ULM637WJjCqSYwWbSGcvNKRAe5
+#TM qzWRLRK37oxyS0v4DMXL20cJ6iU6/SwZGZaRqQ5d6ToMjY1xx6POMR6jlxA7sZAQ8CJBewiv/NBC
+#TM Z6BOmPQuK8QEzxCSZsCzbVEatxjyR4f/azMa79VseG6LHgJKBoaOvEKEXjjNKVXvmKLB6gFFJYDG
+#TM OmYLQ22zB6HFDOsQxaM724mQBkldBY32FCuTHtQlC6mn5OzIQeQ4KAoWt7OtGzGkLn6UoaZ6p0pE
+#TM BiHqUY7RZUJoghFC03A2BUGU7uoq0VxKY8bg3q4KZhXkLJ6AFNmIzs6HyQrBLX+AeP1yEYNikN4L
+#TM w2iyl4XoUG3v9Glueyejqe2dgqEiP2l1xSC2d4w8sTTVYdDXF2kghTqbjXAkaIMxJ7ukCmovLS4p
+#TM mNGEzADl0PwjhvJEwcmMttBhIdDrHSI8wwi/BLL4qmEMg8Z2CcMA56brusIEkfncMl6pE5fYXVZE
+#TM EoG64SLrOfcwAlwxfFVZifIKPSn60dlsEqrNUGClz3ldf5d8Zy3vbc+qO2gkx809pXPRtUfpMh7l
+#TM pPqodGjwLdzEE0U+fCwzRSXL5YYBP4nA8aFEB5Yk/GzOwy8+rwTOjmFsFvkoxEYoudJJfCXEXybl
+#TM alh1A5tHZNWAdgtzQZjv7DoB+n90jpDHwem0krCABq7NFeuQYs3AtBvSMhJmI7mLilK2Tcunx5z6
+#TM NkT3qY1iOFRJGkPDi76a857biQVYxdFfZ3a3XCkbgiZRqpcvX24YbJKsGMOWK1bgOYdsQ/nnyLUb
+#TM NehuNWxHahJuBY7EFb82I1vztHh7zvLIqV0xdxxlIxcHW45JIZ3upXbDaaOzdWTSGOId+zbHOxvu
+#TM gR4u5i4JmfTSFBxTxP+u5/wKnf6beKe0d2wBY9E3k1LE1ueO9DKrs4/5qmG502Fyzg0CtyWDIz8b
+#TM E2WA80kEdjqw3IaHLMbtOio/R7V6/H4mPIBoIhBSbnbK4aDgySo10MiGLQHTfeKy6gwN10c12+Lx
+#TM 7ZbptC7SV5hBZBBobtiYkc9WELblXXBi1hWIUMI1PHDqwa4+jqshgPMGW1aEr47QZe9yTb45DiyM
+#TM hEBqTMiSgntogQ1jEIVllYW+YoYccoyXPuhabAy55/PAYyggxCJy6hUzyihiRqk9lFMvPpodq46x
+#TM YfUImFjaDbwIBLCIq8FIvefwokEwja4dIEQx7ZktHYjkEXHb86gamEnJI4OtRZGpY6jkHdpAI1Is
+#TM 6LwlNF5mn4xBZ3WJDoWcmjjncDCEfYuXaR4lUHd0+0oIEGMl6pP89E3jn7B8Fc+mFwfN0gRbaYlc
+#TM 67baUimOBBoJM3kCiwTdRdGzCAoAAKxDPE1oqFMaJUtbFCnzjChCwmwuNuF69Z2U4CY1TqBQxGTa
+#TM YkNTyGF2akTCHK1frpeRbAKRJiMClQESGnrw/Y9GmBJmNJyYSNOTZiCUsV1FdbvkpVGvh1F1qWK3
+#TM K80XIzHTnIVdq3Ee00jFQese1Ld9nyLBNDyrFopMB0JBTK+otzIOJ7+pGNKQwBS1TRtoISERJqMa
+#TM C7rNotzhZ7a0QCPiuCS2hG4Ng5XnXRg5U1yBu4VZcCi4qetE5iGMUApl5257rWO301CSQpRmoaRU
+#TM rDMdRzpTChLIpWfZTa9cQDjeLOSHgzcSaEkhIcQQhaUbG51N6bEm6HPgdsLn20QPUPTFQciHOIaM
+#TM I6hsBDkxkYYgc05dWT11wyFKFb+cDjdqw+WxmlCSS50fkosnsIpwQArpf6lhGDlyD2Qp5rqw420d
+#TM zshMZAGYtn7EhCCy6zqyDaDKlqyjOSDnHtQXUB7IVPcgwTAQOIwXk9ubO9Y28+hOY42qe05nlW6j
+#TM tJ7K0wxFpYWtVFBkQkKEunPBi1zVgBtEJTK3H4w4Wm1MkwsyorKh3qzhiCw8SXqcHGenymCqfNjF
+#TM yw1jIN4EjfCZlANtGGY0SW8+Gk8KhHfIkEQoP26tVE4vxDPj5QSvkoM6boSlmkcSssnkbvjSSODJ
+#TM wBJ+pW/3JGedOHucvO7j6EZhuaJijAJniGMwEpxlrBul2HA0bX6m6bOYSL9hpI0Cty558w/S0fGr
+#TM DHbnl/+thhqmMwWAzbf/Gy8WJ4vx+K+Xpl7lf3ip4n+9vOZyTetXR+Yy/GJ4e6gqGzlmR/HyO55T
+#TM N9+GX/N2s+kPVw37EtQjNjFcbfJ4GLjKKUpzcdcr48TzMk7sa3YYmtOi2P4cU1af3mxvYDO8HBs7
+#TM CU6o9Z/bR9uu5dUrJBX0h6631smvJ2ZBkfDNpZZdURK9DGADGOVxmreawCxaXpLevOG27E1rW0+k
+#TM D+NpAn0lVRiQnEcYTiIWEUflzgVhJxIS+LJvaUTzSZSuSvovO9ue5R2RcmRUK7BoMs9OHrGYPiIg
+#TM 0D+JbDK9zzF6T++rkw8LzCHtYe/r3hca2UTdZSZS37I0JGhJ8EdWB22isNazk7to+YQBd/4dHrzA
+#TM sNUP0QTrQe8pvP4GXfXMQjx8fUz3ebvLWHmhIkAmgwcMYcaEvjzv6KUaDQVX9j0neF87loIQU214
+#TM QhFLpoxYx7tu11NdX8RGs9A1cPuTJRsZKIavbqzd3Nhau761UHnXkBpDY5tAOCTdYW2/pU2iSKWA
+#TM Zn3MnxUX7cven3qfFq6IIiWKAF3ofUtL9lzYKz7uvZDKTLMy32GUI8oLA/vzYSEKFF2AFccQSL+X
+#TM qwvPtugCFDnN1xmjgm537BML+KxHoo+EEAsvg4RkQ5U9xMUsXPTM5Cz8CxO0cJ1r2N10vDeF2Kel
+#TM zRNX5suCKUfjpkYHopCu0O/LzaiJyJloYRvxM9rlkXo14vXiKtaY6QR8nYPFNoxhrQWG3IWkFsAY
+#TM hLsMdWeZe0Ln1aztdtt7dl0vG5Jze8dyvDSLFSGRG0p5lzmAMOwQ9CZ17mf1LI9gROvzkyJJE4wo
+#TM 46Mz5ZbTCbElbPWG5fhpoJr2E9HBzKOM/EgJhXE8aJJ//lrjOmZ/ZN6XDgUbwrgMqMc9Hu3b0SnU
+#TM PVk/eXsTk35miSSKCdFn2k/2uU4cZCHY7HMcuGRXEjyWRwfqYDjh5DgJJ/sLTRG13BAl4Kz6nb6D
+#TM yV+145Hh35AqGI+UlA40IYiOxMsjg7V+fBqcpigeBlVAlPKPZzlFvJptLTMAOs9F5QOfZ/RUNwH7
+#TM 1d0W2orIMT54JKSMLQvnXU4eorSTidjvbJoMRdwYkzezYWcItsuK/FGS0aev22Aq4uQdmIOOCIMU
+#TM oniLQP32vkGb/d6fTh4X1EM7nXto2YFN0TcYfTq/cCdKQnssBaBj5rxIz8HwnmKmmEKuPmMalYFx
+#TM JHOOpxFVucS65KZPSTm0tHWykUdBzWoJE0sOk0ta+hGmqcTMUNQEB58MGCFRB5/3qLZnH0Ez4n49
+#TM Rh0LMXDzwHfqDsZYcSQYF+CZUKoMiwJjq8fyfHJLbRbFtWDEKgnxjEArYuRbo0QOhYQBGSslCKTQ
+#TM iGWUFQScD2gqjLKH85TVXAkk5hiDxSqIFo9WeIY9iCulT6WAyVQis+1ORcEsaTafQ5EM4OL2LFIR
+#TM kWt7NPMCsvwObNwGCil0UtWzzlWNBWsRg9GkECeR+tn4cXWy0tDOXxmbZpCx1gHGWl887ACfhQfU
+#TM agqea7zScXhkByPFeMzyartZkhaWR1zNIh6HLmYowAMl6RRCj1s74Lt33W7Q3bbhzbvBLaduuwlb
+#TM CAqaK9v/YsIcNQpzoSALBDzb7zYptGoo2OAgdzseNvQ2nDLK4I541kaEG0uPRWy+gMYwIiujdaMU
+#TM SLe5Axi6tYQ507Nf064n38ZN0ym40A1HnQlOQcS8oq3BJ1EdncUyG6WUQQDgRUOqvEbvoEIUPbu7
+#TM 3XICgJRB13fZ6rZru3adRx6h0SQWMmp1VisUuKNCmitu3UasgEbwV5RKt3lqsTBsDU3tCADmKFhm
+#TM E5PnxWFID5uILMP5MmDGMr4guAlhKyNpfLyiWpYhhtMyT3vPe58VRoeVXcQPeI5RdJzAHl6uE7dY
+#TM waFfd+xmXY8bzZLp/G08inTjs7CXdJXd5qHw0AKqvYN56tqCNFZZtj1VMgxlYrJi3RFSYPSLFJ9N
+#TM hluM9Ma4eFpqjD/RMVUMVqRBpoNNrE1KardLAdSoEt/IkBJEN667KD+l/IES8URfHmki+Fkhweg3
+#TM bYIjpMmp5TQKnQbLs6jG6wee5TTlBsRhkglAyfqE7QocquMM+5P5puvbYWfx7khRhGkYs+7tFIt4
+#TM n99ABD7c48pnlu9+kldsuLWujy0TduOeKOxKYhIZuB7a/QtltbuEfJsVuGEVRqeTUTvGGKM4fO2B
+#TM C6u8m9rrEOczhUgeSYoLMqwsptWTysTYahTnCLni5diX+H9CQRs/QV9EDtX/lfT/9ADkP6MjeHxz
+#TM dImSGAGk3Bi4W3lyxooPRFEwvwtUaWSkyI6LxduIDPc5CmAvEF+ckYtjKhYiO6TMgq+/Ht3h6mN2
+#TM S6vPjgL1+2vi7oItz9Q5CeTCtE3kJQ+cde9z9G39R+0/Prtw+z/+J6mXPsdo7KjC+JCidX6KiO1e
+#TM 71t0SSUM9yRKpsBhRryI4oeaBRF/8DVGSphHwQYgwCNDK7DsFWHvj5nmCn4/RY77LyKa/IOTu1To
+#TM OQsWwJvZC8xClIUyQumvRTgdu4B6fwGG7Dut95VwpaW7mLWF7rrw7dOooyekPHuePTTRayEeAFJo
+#TM d85FgSMTnOq64TZzZC/ON8FM6vwzGH+JMDn18vBUuBmrVEiz90oyH2n4ckDHiAwB03F6rnjpSGWL
+#TM SXIZ/AioC1lCPoaYwr4ijFTwL9xBrNRFyvOYX8S5GhBifTi3D5ywHJMfFQispSTLL/FNuiiVNdrj
+#TM AdcuwlGnXbmE7jp3AYWQhPebFJMUWhfuoARELGSasORcBCfhCJyzriHh6VMuH5M4ymcrH/6Q5QkB
+#TM 74gAL1qrfVzAdwMSLzOAEYzQfsQ59Z9PeBedZU7xJEeDgYVgVhNQ4f5IUCEGcGagaAquNAdLK46B
+#TM GZRkmXsmxHUDeRq/ecerdZuWJwzIQ7JXl9C20JykYWnZNP1cxNmpskhuHoOipFQLnQGESbJIqIWK
+#TM mlSphZJNiY9oSB5fUgo8/hvj9FP9b34gKp55QRPNTdsB5644ihvBlGjFFJK7wMNHSeqJQoIAT2m3
+#TM JLVbympXkK4Yt0Vt9XhILozyBYkpxacdNxxNcsGhRap53TkkW43QGT2LgOS7kmjqFLqWoaxNYiJz
+#TM rsQcXi+jXjmp2YjOl5qWOcdhGcZcg5S+LsCyRkPWZgxK7k6n7/Q5GorkXhdMz5KpY1HMRMrTuXYi
+#TM wyuMB1IaRwoSrrfpr2kZTnli9O+6cOGOWKO44rgwuO5lcEOQ09yxrzxl/pv6/6y6B5ya/YHif0+O
+#TM Xypdisf/npi69Mr/5yWK/922A/Om58Qfuz6L9J+wuKdAAU5wFDlhcNqZa/W8665X4WU2iF/OboLx
+#TM 06TF9OChqdab54/9AaKLv/EqAvkP6lI1rDMRVYog41ekEs8PFZ9wRUKWFDOY5PkgvfJfGtJ/abvZ
+#TM PbuTExXCX3P2rpMD0XLRd0T4xfyJUHnYynq+v1IY3X2t0cDkwucX3x0H4NdcAKVq4Ll79n9lvHa1
+#TM wjL1tuB4dl9fqJc10PsQUzhD1HfKLDmOJVuAF5jcJyeWOxmQ5Lxv0sVG0V5HtDfkUK69r08eAzX/
+#TM gBmiUnjy4eKSS2HEWdpjUYfCyWJQ64+k2LCYO+9p77ve7zX953Zbm+t6bZ9izD4mMdOXLFcfypsw
+#TM OvY3J//U+y0OmATFj04+OvmYgl+j7BjDnFMadUrJ/EeYBSbi+56MWckb7IFGidcfRk5JkfEtdfgF
+#TM 08FhAzw+LRPeUksspu2j3h/J5ekFS+T8jDXKZP+Y4RlW7+7JfXMkHr9Wjrs9DzuA13dtDu5P2N6O
+#TM EhanYzXVsLXJoF1yJDun3Rgwlt02700KyFn3nAZFkIRWYsHh+kWGK00B7Xva6HDUrzSOThdlIqcb
+#TM x7gyjOuWH6x1gyoc3KX2gKOh3qXRNJ19WwpUyqLF8kClSnC6UiOKTpcRuBTbKkTxNPuLWRN+BulV
+#TM ZPeABH/M/AX2Q0Ec9xYoNrTARfiiOKsU5Bq+N22vo4uHwKMvtfdYKE0WcZbKsMdGRpgwVThIFLZ5
+#TM a3GjurS2alYXfr61tLqpXZ3VxkuJOESe6/sNqy6CqoZkbbVjYzju9FCwHIwvWh6AEKoYd9KEWVnh
+#TM UXeM1KLxUJ9qyM8wtWlK7M1+MThHBpGk8U0VF/YyYvccMRCO+FcoYcE9xHjlJQpYTscqs5KPV/kv
+#TM oNavrrDP7+LnzOIBopAmbQdW0hmuuEhwg3FjL/Pg6mk/FCKH8jWwQOpFMU76imciQ51CpJx+qZgt
+#TM B+wXufQUHoyDHrmIOMyILr1HAXrZhpRxpgyvsRknaoQx2NJ1YnSG8ehKJzhzwbkjEB5jFg2ZuWZE
+#TM +zA+Ea78aNLaK0fmWiOpKrTBiFI1LpxOWQveJHQh4E+NCwdPKeUGPMVJdFEMqTRBKOYNbW9kMI8y
+#TM 4792Gcs/0CrCGlzst4pT5bxVnD6nVcy9O9iU55oWetsy359xHpq8LBVQjA5paOmvSlmNYqznzLBj
+#TM ku0+JWD5Eui2R0jCPQDi7Uuy5vp8RmOuKkjGoSkXEHcsGgBSkkClkTe6RnluH/e+Y9Tft5T7OVLa
+#TM C1ouj5SLdAOBtbNje3qU1tuQnEakiN2qd3+FbjwiZ4qNDFPyeBJLZhteKhWXYcepv2ilLEE9baLf
+#TM h6BJpvqSSEYy/WOw6/jxCylE7JZJBtJX5FsCrxPoFACZv8VbYgoA50xuFpFANyd4JNo1Av+UFjBy
+#TM wIyjHdI/5QR8jzlOk4/ArnuwfOTB8uQ7CVCSYUNKWoIUKJp8D6ykJ6qU9RTz3TCd+qhoD4khNp5q
+#TM gGJBNL1gWax4SXkMOPh1gAR7wLFHK+XU9mw5SEWmjFTPEH2aaL614Na6CAZE/WpdD/bzpudck0k5
+#TM CtQNmwV9wfu01LtqBlVMDsvJA+jRbcKymC50tYTxVqqBZ1stHQDjmrndhZPl2XU0NYR1nN+1gCOA
+#TM cd3cvL41De+75JaBYQM0zHJj1Td5HmQgUKJE6kaGq+JrLMiLj4XWvND3Q90b39q3lb1hgeIwLxHb
+#TM zDffDNVZLHv9GCI4xHX3Yyz6jIZRTRCPceNUlv+Jc8UUPOU5BvKI2Fpic3lYj28oKMqn4fbigp0a
+#TM R1HtVBR0uT8KkmeKwUQeY84yZabwlSb6vZQ/BkUEjyWvRO7BqhMjf//k8RgFIXl6ci/i7/w9p3Md
+#TM sM3uAPPEo0KaYEQ7+UdF9lWKLU94/lQnq7BhXLqoF56W/ArHxD9TG5OgLZyI6betDqw3y32Q8j7a
+#TM kuIpbwXYFRXMVDERF8F8hyvNvtxjIWZYNrk0cQrC87/Bx2dYRELEcPrmMI9TyIAvdGTuW7VYQ06B
+#TM MeFlbgvE5jbZXygQ8f/Y5cVtQALAqfdh1WOxNJArloIA22piedhW1ZEzVfBDIp+YJd5IZthxdTT+
+#TM EWDwFka35mYiWb4X5VRfY9xUhgRoY9mX70ne93gkbhbSz0IrbrYc0kTFMwcsjkWa5dd9hqNP6BWF
+#TM cW0X3IN2XgiANPPG7ADGp4mfauSapsNh+B0JIf+ZCTpxA/5w8rAwZEThqcms8Bf5gUpYzGNyu3Qa
+#TM dFXxEFXcVRPtyeKuugMYnWT2N5wxyoDcTIY1PMVvh+1HMuim15SEOLLXmCiBmDe6kGMe2H1CTSzw
+#TM NjJCG08NasSvDEyiLme116Rvw4yMVYklo6HVCdsztIjdZZhUiQmfbRY70LSOR9IQDonkvwPcz50u
+#TM HlFe0t/MxHQMws2Gu+Y86T3LyScSxUaK4SeBhkqRqWHe2U1bXUlQGa6bdIFgDzbJIhmRvtbOMq8j
+#TM i2hexuAE4brVtps5MgneW9fJPlZue124dTHynOt3dAuTnKGf8htjbxSM3GhM0AaxA+Q7GjIHzKs1
+#TM v95807aY+6hM4QKbagcqjZtC3Sbt8zgIQsEqLiu/IjG8RQSnp4M6pEIoKerDGUYYP0MiZbjEhEq7
+#TM jGJk7pqpciWW1oxoF55kOLmOQ9hAS3bOEViXU8ROQaj+4ZL0dIShI0gDU85opgmkmUi4sALdO4Sj
+#TM y0UAmjc1v+lgweiCjqoYzCZWG9PGETMFLkwYmEHUjGeCDHYL9BhvpFwspqGR5KzC80ZBBvxCwjQ3
+#TM XROQQUHxxc29nv0wK4F0CZbzL8HFQ1j98zO9FOMQsTDk23hqgEQDZx9F36OlUI9wpkhp+wDAhh+d
+#TM r3ovSGOqI1MK3MIDpicWgjao+zXTqN4nlgFTjj6Mp5RoiZD+JMVZ99x9B1n3NBsCzNiJb30t9sJc
+#TM DtKxey6ApEREkZ0MppTDOJ4JT8hI1j0rn4d8i3SN167q3Et9JEv5U6cwoVJGA56dpRIsA9cD1+By
+#TM PJtfWiuI5ttMtwMDuzaTnjrBUDO/QI8ZMbKatCV5SiuWa32XaHL6usFjKhQbJk4l75aJB2GgMfM4
+#TM DINVu+60HX+X2DNWXaQkhWn7PGt84GIUXEQLx1dEF7gZeZ0Eu93WNjWqUCREJTGLb5lrVKgryRws
+#TM /3YOAw6wVe4bbUDRxlEapE0PxiD8/aOrFFXrKQVSkIkiWhgs9p+R6WMwVOCAicHdcsjufs6mm8Xo
+#TM F32N0jwhNEbbfm58l9KJdFDPr4fjgSLVpXvxDLgdw6/5eXD6KexQlAeHh/XrF+izf0BAiRnC8y+a
+#TM zWGGMtP3DBbMMjadjmfvO243Iw5pThKd9bBiGrc5UcwSa0g+ZE27Lo0mdyHVDETx3i6V8z12FNQV
+#TM dRmir0ZsLPMMndXi8U8UpMmZOPUd6Q9z8NMg8PJDpVGaKOe7/QwMM23KnzQkvGQnXeoPK7H+a0dw
+#TM WzFjqoEWtG/IWL7iHjWJLoVMp2duLK4vVja3VtYWFrfWVhfjG8GGsNZO3Qz2Ms/6Rrm8FTTAB/Ja
+#TM +kCuXx8UP4ycLk7u2R2gRjJEu0xmz6I7xOX2Ovz9a+87/o0T7aFJo6QK13qfAV2v6pQMNWMyCQKA
+#TM 41hr6KiiJusf0gmTZoiphQ0ioYWg3xhJlefEc3Btuh2RgCs9xyF0nUJnMbQwYB9qnq+zdEMitlD7
+#TM wijfq1rRLBaBiBpQvZCALKF8jzVshHqaKEmDkN+oGa09pk4dMKIdSTiacFMvOFbT3VEPM+Bwx285
+#TM vr9h3+7afpAQG5ECJBHUC5lpyTUZQOvbk3sxGV8ylhhXAicRzloXDZvtekYQN7k+eknzdljotpbT
+#TM FmzxlMokF9OxRkastCepk+BpJ0xUin0Jh+kBJrx4SIfvnra8Mc/FoL1nwB0/QVbYTA0MEbOBiQch
+#TM azccr8Xwc+r64BCFQDlTHinU1WGondPrqhPqhThAJDGZEa3k85O7vX9PLENs0nUGdtGklUmmgaDU
+#TM wx9Ruozm3wXVKVs1KSKD+ISxu6pzxzKA1ejNEyZKxM8oTHwcIVEeI5eLG7+CHb+XbJkEJo8RsTIr
+#TM pL/2XpClOUHOF0Ip9DkWUuyTMNLMp5E4/Qng5Kek+WaW7Vz7TUPnGnBTHnWoh8XRsW7VsUUm8dwD
+#TM AO32H5El1X2KAIg2+MKs6hNsDQuxlCxCxQsFhOH+b5TeQ8t76v17NFhggtinvb9QAGqKloLxBzP6
+#TM kE33AXLuM2UCuiH8nnqFSX/PRpgcQJYXwIxG+4gX5lM0DsMr8fcklqKEMy9wdVUnhfvkBSB3/D3U
+#TM UxeyjzOAKulOt29iBEdKHntuis5kQSHdGlk6kJXscKbs0xMNOOgdzECp161WB/5SHGFmzosZ4/3A
+#TM aTQAV1KOgjLZdoai2RpO5yL1K1nU+1Yw5CgoNT2TD19S7b95D5bsP1B3WgO1X4wM9vu0Dy1K7Q/u
+#TM ZMFqNw6lyr9y3VaqbwNax5TM4qVc94bpM7hZYM/yLkCLndSRXETTUxzMVN5YJsvDulpQ0BZ5RDQE
+#TM YWWBY2rk2uGUGkr4YtZv/6LcZOfU5johvKSY64SmOoOb6TQUE50G3Js4E+mB0kvYOVPhoSEals4w
+#TM qlK4t0bM1keyAJ0c1NZH2L9w10Yf47C2Az+DXh1ao0pwiCyC04Y9aHHymugvlm1ENn1huc1VntVP
+#TM SNgJDyJc4DIRRZzIEdwBoEbqu9QwzaJ5+XIjjXtFE2gmj02nItMtwicjFgdY6XTKUbXZhqkvoAUs
+#TM mYCOaeVGaAIeGtJniVREuCXmxakz62+gXxvDJG4aGUh92U91OYCKkTAzV1M4XuK1zrWKsrGMwDT9
+#TM wRVF+Gj/jJrHMhBzb45kaRplBSfTZuLtFD6FvgxEejAXqyncSuAaRLlrf3UmmwSMLmUWEwPN4uIA
+#TM 00gqTceL0lyixxM0Gb536lzyiOr45XpgdSLtarpmNT8fDj+q6Vli4kbloWMSfZCckxj5kpFrhvlT
+#TM sxTlo2lxm8s8xws6fgtkDaRUa9uRhIdCCeJ33Niz7AQ66bl8cmR8cV/xHNEZISF+HrPlRCjceUbu
+#TM p495bFqJ5n5TS/FRRd/Yx/BSvwW4Gc3ajdwhkCtIwjFDYD0gjowB6ucKwYZzzBE/hB+HciaRXKDQ
+#TM U6VvD6GnDvsQd7iBeypC3uh3c2mycUphX+72DsRZZHMy+Rm1kuRNlob4MO5oRARcbrXBtj8CgSZR
+#TM tIODgOSnlQIFmUKzolkil9ZhvLbUq5fFH+QOXIdw35cmUB9O/A8LRxi+e5O/k1y4jDOmTzub0Djd
+#TM 7IHy4O2MDuiNKjmQAl8h+5Aig3OMpCCiQ1prRMnAonGdJwKRFRiDCa3TufwxVajAU7sq7L1iZU7x
+#TM nlXqXRLFMmowJAeT9OAAt9vlqcwAcAP78QrgJPJRGmB/H17UMkT04sBV3x266nHf7HQ5KHeCnANl
+#TM I4fkYRuAgegLyqH2rpOhuBP6uVTlHSoi0hVkkxODpYnrG+ZVlvgkrD6ZhecMf3EtJvwZiQw8Zf+2
+#TM UWGwGX9I1pjywxE5fbPwIhO20HcGczQ4jeH7IME2001u+xoyx3YpM5mf0Mgl6N8MK4m0+IyhpkLK
+#TM WS3L+THt9J9PPorZiRaGTYI1nUiZlzHGqYwhJg5FgacXYHmzNbPp1TSiEbg4NaavkHQRTAD7vcZ1
+#TM G4hlfyslPQi1HQ9735qFtBOda83CtAcEOdwIkT6nnvVBFiQti+bQmX1LxaxwqsxcYtNtW83Q/QQP
+#TM 4xBW+Dc76B0ADWWgmRKzzrmSETV0ir8Nkxl8QfkJGIGPe1sYxLlA6MqiScQVhH1mMS8i0/rBecyD
+#TM AxICUcE4RYJCJXG7FLvFD4UWqaHa9EgeyszeZCkhR4+qtzWgbrvOpYY8DxErZvpHbYAegyNwomTD
+#TM hMjLlsiHjNHQVnztrVnZvBIu4PJkUUQDvlhScpzFxJFsnHFpJB/9VQrDHE5bSP+qNc9tNjfdpcBu
+#TM 8aKj2sWoGIvytdRuuOa+Yx9gmKiqFG9gTBtXBIJSgOIRiSKmZQ4bjTBBnyDGkqfY5ViojxxreHYT
+#TM jeSKEmrCULi9Uw2A+LR3jggRJZ5SjLWaZ9vtGKgNwKvn8+iDxKPIDa8Qi55QKscZW4qpMJ18Wkpv
+#TM JIPBAbKkXedJfefEZ3PBB6AYSJiowKOcu0A+DTxHAX6OC5DI2RhvAOUwYZoXB8kTBrOJGuxuiXQ9
+#TM NFuh60mMm6WM0l5TuwC6KOVquoyCebcde3slzHiTUmUcjTlSjHYjEZ0cCQrHcJHGX8i55EhAjjRB
+#TM jj4LXf3L01yXVZ4IpfypPWJjhUHoBUp2wUwlxA1OfxU6hThaNFlV8oNTPBNgJkrmeMPon6v4ND4w
+#TM mVlV8+RuAey/noKwV6RcrXLkcrICZ+tASNsQCDrM+Zqf9zphtaxEN7+cjCc/WO5xycKB0/eZCVvL
+#TM mTmF0/wWyUXrPGiS50AC303Y8Zx/mO6+8Z9ZAtDThn4eIP5zaaI0NRmL/zw5MVV8Ff/5JYr/zOkP
+#TM MxaONCUO5oIDt2SA4Uv8nFIHgh6I2nK9HfMD322bf19dW13b/gBufPEK4dJ0XBMJfuUZhqW+EQSd
+#TM mxvL0FpbjRcaloC3yjMYQ5MFS7VHRupWYGkUKodlz0IKTsc7g6XBoshD5FujYX6AGdQUOmhPQvTu
+#TM kbXrs9hEcjtArADO8fT0Sg0yeBPPDB5z6SkzFiXOkdswvUC/9RkWfuRBJJKmZGIsNOb35P/1pXBy
+#TM f0xxQn8b1j/5GGsJu6Ln5Ad2P2Q0OUf6DJifr8jECr6j2c9jis/k0gaw9L8c9wmRi5iWz0nVtUZ0
+#TM 9fHcKCxgKTHtzJ7vKc2Hff8DiyP1AJ3YyDG/wIf0NRmSie9kGAYTjBr5BN1KkaGOnlA6uSfAsEll
+#TM sPuT++ETFDE8Za1gIizsR2KxCycfoamUeItmuWHNF7jA9O2PqCmAZx+heih8/xxTHUrjfy71+keM
+#TM rKLM50OoTW2TKZZo57uTj+TRhPMkeIhqY1/SyvwbChUo9UzYO6WYGw034AWLGhLW/4atlDSeh8jq
+#TM ht8wQeO3YWn06/0Q0+bApROuBjr0KisHtXCXpF6+RmGOvGMw7q/QVo6eoDndJ7QCCCDfsfGis2JY
+#TM /luKCvuE9xqN5ytcM/r2VyrxQhnHXeB770sj/YZC5/4mqg0g/kLa1y/huzzqz6HHz7iMKRw3E43z
+#TM /XqOkYKk1QXgVqFAjPnkXmI3/4xyBXY2wzrfKbv1sPd5BFW0pi8kGMRzG+0zmo/fQz2W1D/ZMUrQ
+#TM gfP5Et7IZb6R+ntAoqnnKJZKjPZbaZ0+ZxozqR6mPLrLlAnR+SID0KfSk+9ImXZPKvFcgnjWEpwH
+#TM acb3lVOFM5R6xTMP6/C5sucI78+lkT6Uyn+lQDbGePpMmv09wrQPpNX5I8M9ShsvABPcl/eMLCk/
+#TM kb49Abj6PiyBusSvE6v5DE49GnhG+/mE8BMpk6XevoNVRXXyQ7kcwPE9ZR2f4hmM8ABrRXrPfQzC
+#TM 738lNY4E19CzhLFgz+4j3MTG/A2MJzyRLORQWOMvADW/kXDKC2kPninjx5Hck7DLl0q/jxnshaeb
+#TM /YuefE8QzM9M7HK5R9AgnwBYZTzBUg/fY4zCsPePECbkVRBz4qap3yh3zvcKXoX9U6DnQ4Z/VNzL
+#TM eouNE1YxOpVwH3xB8PStNAp5hcjcmLGx3GBLvm5rwF8EeN867aDCI1CE3V3C3ElT8AuNCUuX4FOp
+#TM jJ+mJvEZfL00iY8uw6/i5WiUpfI4PCmVRrUJ+DBZHtUuY5HyNH9aKkEjl/Hb+KRUqwQFL1EZ+DU1
+#TM AV+w/zL8ugzNTONDaGZKMvkfh0Lj0NYl7AY+T8BwprHv6TKrgOOblvrAQpPYGDQ0Cf/GoXEYgzYO
+#TM ZWka09RIWB460yawU2hvcpIN7/IUK1uGZ+UJnIQ0B/xe4v9wKmX2DweJ64D/Jiai8rgk9A/fQ7sT
+#TM 8Hcc6qI1En6ewGdlqTyOEceNY5hkYyhdYs/KU6yfsrRAJSzDxzNN/2PJyfBLSV5+egSLw0rg+tNX
+#TM bFZaQXoDv6dkiCJJCNK4IvNhSPBeRadsJOlQ2OrU4G/L6mD6zZAidgLUwY+yUu85wfujHCjxsxLO
+#TM 0GPUbxp1KAhjvFK/YdeiiCNyl9JCYwbEQqVpNSz/aAtAcW+74xckcVvYAOFbTvjyK5JTx4Q3CH9V
+#TM tutdOCu7Lctqb1X8i9Vu3XL8rdLlcnazXwvL+dDTi91MVct161uWv3uxugtrctTKHR2jGKKGniOC
+#TM YJO70fUtb/C5PSUvhO80+dm3ghjBCTa35izfCbZW0DIgsJq50xOUjAbj+ZIcZ8J7HbYDbypsdsVp
+#TM +7vWwZHUphitDE3ItrCYsBFXwsIHUj54Pvyv8S6mMDDIq2gqe6DpSFFrxLp8SrmjMdevIZzkOOWu
+#TM 6XRTPdGi5gziUciIr9vWdi0fFqFlNS2WRZlxZChbo9THr2EaR5EgHb9dHgmrWt264970mrrKlY1q
+#TM UUOjxOaJCLTsvTYbJXmkByYm4LACFj7DNm9WYR13gTH1Z8bG0Iz8CNvAXBNjyCeO/cQf+0lxvI7/
+#TM zFZnnHSb2D/vl3VpRMOsOztO4Ovt+Cg0dLRnX3SDn9mfnvy/P6Xk6Rhb/KfFn2K2wA9cp70pChYK
+#TM UsttHHeTjAtDllRq3+c5wcPpokMnum3pP+198tNR7ae9Jz81pGd/THn2B/EsrZFP8eXJR3KFk9/Q
+#TM s8c/lYbpU/J5/bY0xjgGU02iMXZTNLfb2HzL3bfXPbvhHOJBZ+4nBSM+QRRu7pmOH+Yn5tF7bfyO
+#TM fUpl+SuGU1G+GpDOJOqXp4g0TO5/7et7hvbrX2thVm9p+1BGvxcLUYpH7DHhEoplx1l86cT1Pu39
+#TM q+TBBLwGUCgvQi8mxtAzD6KH6F7zO2LQnlHaDTpTqSmVhVsqcyDDMxmeN7/rd9A2CzdFhMOd0bgo
+#TM Rz424Q7R9K5eg/2QhD66JCYyl9biBu32YceuBRRYhN8y7PBe1ErvKwXRiwSlQjr9wni1sAu2v+DA
+#TM USpQ+nPYYavTaR6hv8Je3fF8DDsLLy9Qi2ZwGBTUzW+Y9iEm+tRT7eJrVo0FPGlQHFtycYzprLAR
+#TM VowEv7ivYj4Cmn4mLQVvMkVwHXhHaSNw26jkubmxrIcoxuo4ptWk+Zq1ptutj+2XxmiCY2yeY/Tu
+#TM YjeA27DtwJqg93AkMoM1sXwtKUmLmRVhUBx6t+m0bLdL2YMni8VishzF+A0LlYvxQuTa7NaPaIOh
+#TM vBNFFO4TTJjHEoYTJMcRTo6g7vh8sHpSH2R5qBmJBI06jsXAUMTSswKi6kL4lOhuvUAyv0KySTZT
+#TM vahhti7qwWza7R2KiMUxs5OVViOgXBlerH+HuhZIG0GlEGHJwi/beFdrSQQmgyEp/op4+cXvSABu
+#TM Hyp2xMOAx4kLRrKNBkhT1g1SoPoOHIcDDz24cD+wjHrjwGBRt4FrxPU/qCGRUvjWEBdouj2jLR7W
+#TM 7E7Agm8rvas14mgylGpy/u8zJpkC6gLDHgvTm4geQWKDLHAEXiVE+pDJkhDjadQeCs3+wr7eFcTq
+#TM M2L/MMbWpyFalM3R1HVN3qoqqjtwvTrSymg603QA6rQYPqICbM3fmtUmwgspUBEh96Ci0u8V349u
+#TM Izw/FmwTgdfmUQdvJQPJoOjF6trqVnW9Mr+0+vbWSmXj53ArLbXVc8U7Db22cP8LbD0LBuvVpAC8
+#TM E0Zs72E+Mmi9Sib7t5X/lTQAVTLs8E+pBszX/00Ux8tx/d8l/PNK//fS6P9SErpixO0b8LqZk04y
+#TM yqqaYlwyaC5WssT475I89VWq1VOmWrW6gdtyPA8gph7mXSULdQTU/+MTtvbLxRomLiVzuYFK0ll9
+#TM iRKVVjtwD6G7bt+S25gwr9JuuwjedUaH/I3lQaUqyCT2nfF5Z0yVDjANIgz+Ty37Q9db6+TXE5Ml
+#TM DtBcatmVwabgd5jlBND5YVJTpjy/R8q8B0ruhRltU1vB2037NXxiVg2xGCJIulfZ+lVh5Wu7us++
+#TM cSkgPLab8GRG00m8GEuLhAbyIwnHpmTk9KDrD5BdojQVt3WbTti6ZXvOMpO1WGYNnmwp7G8ibFDm
+#TM tLjIvsCXq4AGsKqNGz1fddHMrcCXMq2U3e7Oue6egZLRRau2y+8qZr7KwnuMaoh1jUw7Vr7+yGo4
+#TM SenBzsBGq8LCU49YYgPTT91yXAxXS8wJfF1s2Z7VrBtyGDrFdJhH155UbEL5IC9u7+QZoSrQkYAS
+#TM KdR+5p4WE3u6vZPtUR3aYAqo1R2UA6dkFillpIYcxNljnnv0DhehdEDnM/iVZ0ipxBvF3ZUst8Mt
+#TM XekGIr9Ynt+LbIGZGvJLwGuuEW5o5DvkiFJ93Qi13UP2WjEH00gB/YBlAZrRSBn+JxZnP5IJk8GX
+#TM cN2UfFuEyBjdrn4nUlbxdFVRL2gy9qmZhh3prG9a27oaSwlDWYQaRfh8dZRiE1YlDYrbfhfup+42
+#TM +ta9G9xy6raruNhh/rIMvHpOkco3gmbc3yMcJApDACPQZy50DN+h7yDl4aIxRgnk8If2lEqRXqAr
+#TM 1kKar5icke7FSHcOdQv4ARUwQp0xys31wwzVyZzVzDUx5sQ41G0UpVniLQHs8k/DXUsR9jgFJhgs
+#TM VzMLr5qI/R2hbdVTNvLnwYxWoWl/0SxN5DvQDuM8G8bBYzbSXEnnc9WOESGEaJT9UIjswDiJDowS
+#TM uKVjrbiHZXauJSPFCD7NyVFgiQt3fNJeHZ/K9TLbi1Hem2hlQgy5SYqkM+Q1SvM2vXAntkckxjeO
+#TM uew3NztUEmsfp/iNGdribSTshMf0qExSJPB6Ctb+V6H2ftp73vss1IZrzOSVovp9LkwAQhtgJSoi
+#TM WfTixZCbYVVGWP3Q+OnRNsYMuz1oYNTQMOWGEygJOW/jEWM7JzTAch3AW+hbMkqaSFjzoiFVXqN3
+#TM UCHK0NndbjkBqhUHHFfMbZBGgzt+23T8MLRn1CpQgwUGxnfSbN5ZmlkMMXZFqXSba3DCAJo0tSNY
+#TM 4aNgmU1MnhffEj1sIvK/5MuAljd8QVDZHLYSrTVsb3yp+c1120hRpN/uqyRP047TSlCzkTKCvDeD
+#TM pi0pxEc1FjiOqcVZVpbs15RZLfn22AysPVsH0lzy+sx1wJfnmcSEBYXo4pZ/whpIBA0T6XY3d2ER
+#TM zeCo45Lw5MjcBSICgW/FrjvdVgyZjZwyV5GIl8LvYBYghX9hrkoTsUwqZYVlNJTppgT3FelEbo+m
+#TM JAe5HYb5xThbTRvnw3NZqTPaU/l+KBOTBOiO4PExgr34DDcJnm8jvTEufJAa40905G+wIguXnHqq
+#TM Ym1mRR3meBcJZ4lSJh/9KAhBwjsRKDHcHWRZqLW0kPE0wFEeH+I4EfXNacoNCPwCHHZ4upQ0drcZ
+#TM njnOCFBPiRzDzuLdkUwWGkjz+5tIMoJhpoEQZPrmSWm4ta7PQuApCQdCCQRQ1O3+hbLaXUL7RCtw
+#TM Y4kMFD49bL9/YZVwOPXZTBLJaedusEwiEgDwOyY0XkOcHWFdeswxufqUXYvqs6NA/f5aU1wtKlVI
+#TM RZggJR2MWeQOMhZCB53PUVH+j9p/fHbh9n/8TzJn/pw8j56KmB50iO5R0nge8SLkamPHTIn3YRbI
+#TM iA3TP7Ob3DwKkDk7MrQC082H/aPfzjP6/VTjITq4XeNdKvScKe95M3uByW9pCuweoozXIpyBXUA9
+#TM CnmkYbYtLUaYUfxmsmAMO3pCbPbz7KGJXoG8kChJTi8oWyDFBujj9x/D9WnCFJykuoC4+2kAlroQ
+#TM Kc6zKmV9+nVixhVaxnIVkgR4GpGedkgHZF0nBs0iGtlNc+5Fof84ecreM5pHnNXUzcg4234M57OF
+#TM FxLpTSSaeGx8OjSpwe1JKcjse4CUg8uTbpSCf+FOaHB4zG8OPyuhZiSOoAzKZDfGpCSzaA7KWokl
+#TM V47kIyHz2zfHRphZIcJg8vQzouunLgrLrEHh25/0vjr5sJCVgEWJqiA6jhZqa5SWRSu0kPV16mKt
+#TM nNHs5aIlg5b4imE1XChYnlrXwxtmqZ5cLKYLO5KG4BinTFUilvEoOP0Ckg2ocvZyF5BYkxC4jgi4
+#TM osXaxxV8N8D12GeAIRiWfTVFQP58wivsLHOK27UOBhiCqUyAhfsjgYUYwJmBIrzic7B4WuqUOHlT
+#TM 5lHbBsnsG8qhHK/WbVreugdcke37IS2mp0nFspMi5+RZOx4yyFFuEDnuJLFO2X5jopEwWFyWpAPF
+#TM xflCBZ6+/lhEA49xnyF1Ty2JHMGDSezYBSTcbt6jpEv0eal++D5J8LIlkeIyHU+V2A0nhEvfRZJS
+#TM LrUxMjl1VMyJ2ZERVYPlnffcjpx7nmt/4kI2dd+xEuYjR20kyfQxaQ1f4iiZyUj2aqZqL720Uy93
+#TM RTGiRI4dtmsecwRABjoStqtjucLhjFR1ZwiHKOsxhPI6Ds9oFJOmNyAD8wB3SjbqEEhLTt+A6Stk
+#TM 0ue9dmSdj0eCohUpocDQojeenlVxEVCztFLWAWCOVXFdWivq4cJ6FhCycGlkVoQ1EXWLGcI+ABXe
+#TM igwhfEDx5Dvk9xYuiPCLAFA1RuRgQCRwS7blieiRkuxKMq/T2XaRcmaOcvLFA67NJim19qkCuDWZ
+#TM 1x6MNG1JRCeVI3JR4jHQoM5ryeCXUkA1oHDlMvmR1eQ+Yil4i2pKhYGle6fKjprkFM6aiFMS4vB9
+#TM VAU4lW7grggLto24BVso0YmlcR5U2SMxbJF+B49xqOLpK9Ukwe0yRsI/ewrsVK0MDedMipkkDRC/
+#TM 1o0sPwwKVhUIV0kn3Z9CqHo4pUajR0yRA7UlY4AwzSysmipYDI8M4mhJJJCMEqgNKiUQdFzfmICp
+#TM goRsGjIeyDDT0CXj9PGc36fJBJAWPzk1DLoc4VwvHl6/Xrw+OT9xSQQwp0el8nhlomIY/foK6eJi
+#TM frLW4UP8pid97pd2OfNMS2enPJ0bRm7xMPAs1YwlMzhz/FSwQyx5GLWNfqHws8IFF/vvdDoRnFRj
+#TM Pz35F1iW/wsYwX/RTl5QKIt/Pvn45CP+FThC+Np7TiX++eTPJw/jL/4F1T0n/xJbxglaxryAuwOk
+#TM REhowvGSlJFIZKT2tit04+khFs81xn3e1kzlb80gqY9lyjeGTqOMyDo3wIvj2FJuOndFWxHLibz9
+#TM kmRCVrb63HMiD4IlhzJ8Sxy6vDkUpHQCFKDqXu+ZEHhTDINnLLgKS/4nvK/zzWHOO61vMrCqCKdK
+#TM vFqGKIfobDysGAAjswRp77LPspVZMduOVZgRZtk4sQQcfaxVYxFMkbpCU1VjZHjUmmZW3wf0rQ46
+#TM ixMrbAxSUHF+TPsJTeL10B1Alie9HTdFKiPFSFmhRA//+5v/L0Z2Wsbx//7mfxXysnbnIJ7kFasE
+#TM cp1USVbVNJSQjmr4lNnPqbWR5Tg3U85Ms9HXsrw0MbAVcqo1chynW7JRcmkic2CDhzOXGGsWYjiV
+#TM MM3IzyJGMl7uaxN97ikbBrOKTuj6u/W1RiMji8OUYic9uDl0nxufk5yYP+nPQChR1Bc5uKSE3Qfj
+#TM KZmZzMDj6jesT04+jNL6wvdvmfmOiEkj6QOYpfRTjE0jXLuViXD38Gcnv2ORMGJK67jeyUzVWeaR
+#TM imfei2QuhTtCbIU5pOVMzSyomhQahCL+3GdGLTmnSYTrzs6xnqoYGEoBYPSXcIYG6CtO22GizISU
+#TM ntsjpko1U0SW6BC/5q3C0dFV+dlFJDavzcgZEaTIVmEreSL3kYQ581BYezqOtKcGd//hsJLIKCRY
+#TM 3EvlRSPL+DuyVc+UoMXt0aYlc7QJyRptWrVGmz4PGdoAWaSSNuJDigMkqDRS0yAyjdS55F1KQ+rC
+#TM cyqm6JC58dgJzTAMT+EHzlNeOKxyaDgT8olE9p58AhUJK4Xovor8cyGMjIzDV6g+ubBxrP3nP/5B
+#TM u8APMedb+Ld0kuw0s0+XYqaw9ZeGSD8bEy0DSpyJeOnc1F4/BBM6niLAyR1rG1mDDLvJPaezSs4A
+#TM qewuO4bnEwX/VfyPzPgfodXcDxX/vzwxXh6Px/+fKo2/iv/xMsX/yIxtcOoUABbmDsl5H36sAla0
+#TM cwqSX8UZcg1QYK9BsxCcLuMAf7bYrrl1oAJ4yH9mb6668AimIsapzGiVLmXNPXmk/T1cwO26q+lh
+#TM tX8K3UJFaEwpGwF33KFsBE5dzUVA7Jf6qLZrwbSaUn4CngqAIQJ+oTDP+9C+9l23u9ndtrUF7Lay
+#TM vqTtj2s6i0TOHZOAGXvbdeFa0ohphVGS2/4jeP2RxnMBiiSkGfazItYWXhIBjfXdza2fL2IGzsL6
+#TM Tfq4dWNxY7EQBQV7QWb937E+G8CM2No7rrcHNLwue8aePDbIv+qLMMiXbDuMsb4wR8LHwhNEGt9d
+#TM DB9Nm/Sh2EkMrXqP0jVEIcMwAOyn6RNY31j7BU2hEPIZ3E439PTUgE/B+JDMKogldeWLJ28CDOV7
+#TM hAHZCDeKCM+gi319Sj6/LxJhpvfso6odJPtl65ywW+XL/1rq+svtHgXzGOMQWrph+bsrVuctAXFk
+#TM /8Eh9OpVbokgG7PUcCBSFDWUsvKcJGSZciNoNc2G57bwg47BWhNvr2+srWzd2FxZ3lpZW1jcWl58
+#TM uzL/riFF3pSCbWKw+Rew03c1CiJxHy3KPyMgosSUFO42NFHX1JiZzwGcfsNgGd4+42Hr/8LybEQt
+#TM swie0olnAexJhpAaT85z6jrsjBz61CUt70Udn6PiDfBbHQVYgYuvMJojsGPFw0sN9rOMie1Lsbji
+#TM 2DRucNdr9otRV+PxJqHosJEjaykhI5VokLVYrEg1oGSNKeVvd20/WPegay840guVGsYIRGcDDO2J
+#TM UgXocgzRdiERnDUZRLN2ftEmj7WG00ZGNdFFavhJJWqhHEk1M7wt+mFSjEz5LoztDuoC6DJNBlXV
+#TM 4Lqexye0pxTtuOuTDyWTfXAVmS6578nTI/3EwK1/wO6lwZu3TOvAcnBF39S2xedEYEfuTaA4ebCw
+#TM 3xjL8THcM4iEv6TcLh9F+XMeUDIXzHz9Gy3MG/CUxX68T6K+v5Co7yGi6Xu974zUELdH3HY5sTMC
+#TM Zw0V1pZZFAvnChM4RNurWb6chJGjyveg6PvXTAxPcictZiy64qkRc9kR5RSGadNf/TYcEQDki9PS
+#TM uSB71W6QnEeaDydcNSVD3Jm07F9gEgPMV/Rh4g7VtLIhX0jRFiUKjhsD31Iaj/6tXslEMdC1qpic
+#TM iQtVuasMHpxVAdecmLAs0ivixsIF0eC127MX7EKMsz1dtFc3I9prorCg3Fw5DqxTL2BkAboWXUDG
+#TM UYBYpOUKKLNSHnN6rpBthpR9VkfikV8VDzJGLQy7uHy6icnScot4xgcHB+YOkYtWx/Epbjo/iWP7
+#TM 42MMW17rWF4w67edTscOXg+OOvYshv5wX6ff85iU1PWOluqzpSJ7tNjatut1FHnOIiH1ess63LB9
+#TM tBCYLU2+jvv7Okxp9gIja2KKyHgYYNIjF35UcCA3JNQiuPFAxXwRCn1ASK6CYCSDFa3QkgRbfjsd
+#TM uNTnHLo2+evzBLFUwNIc6M5jKNkYsl3Zk0RGs7ii3cgTVHwe4A6SkJROsYO/RjqPyL+vkQCkQD0f
+#TM IeZ6hEmbTj4ytP/8x/9bk1FdHLf1/lVoor4BMhM1UdDYU3aLYQ6IF6JjfB0GPeOINrzCAG3L6JL3
+#TM n3KJUmwJGDxGif9aqnPyocECy2MIokcYDP5+70+CtP2e0jy8gJm97QQ3uttIK784+R+Ybk6jtDfM
+#TM guophqJI8ALvLM4Jpq2y9CureoR+noXK2tb1vy9Xm7dvTv/DRHVz8cby2/NO82Dr3ctbpdLt2jvT
+#TM hSTxKoFC5u2s3r884rh0DmIqFSALAabZHQvkpVyQv2ui9iDn1SoQQUiYwjQLyotbQBIAlYrvyma5
+#TM WJ4slools1iE/0XB3SaRtF4hboDIXgMR7B0VMERDyktAhhYgJKi/uLP0D5V/mJ2NYQOZ30mj7RXc
+#TM y5GtjHgdCinPMC+iSdw2sZewga93gEoJjtahh2CWjOPj/Q/LN3iM6l+xg12XYmusr1U3C1KBurvW
+#TM DTqEIxCf/7AsB09PfREDaPdhPPJ4lovLVnuna+2wNrxRu33l9mzRnO5b/aZvexcrOwz4Civur5xm
+#TM 0xqbNIuavuy0u4dXtApjfLUS0FYVGJ39jr39cycYmxy/ZI5PafO7wCTbY6UyQJy24m47TVurWg3L
+#TM c3iJggoXnu13aGWTvI1Ly875p5BBovjvFEgfQG3uKLDZTRljqBKx+v+LmbHwYrXDEBPS0cZFSKQF
+#TM 4Ho+v5B4Exy4TMPGfOU5dbEBzARMyosfiFhlQG0tyzuaz2ydDxERXNRkjCyJxjaSTE5AZRT8KC1H
+#TM w/UwOKLT1gQVI5YkImVSCDuig6JYjX4yhwFQCwrhARW4q2Y0i2uiVGIaqIbHbwDjau5yGu8H8nhp
+#TM KJmDFQPep0AmWFId6QeJkRJJFI0xcyThUiCW2pepo5CoSk/OUJeJndymifwSrSsQxwiv+PoBzeRL
+#TM T3npInuiZpToOy2KrZLo2D2Ay3eTWjhj54VColsE1zdnQ+LVQSsanCjQprv5jnGS4AeJPgoKVC4q
+#TM QgWZhBACkXS5y51Tc9gpDI/C31C+Fuob7iq8WAPPqu354n6lmx75kabTcoLZcvF1uG62UPE+u8nC
+#TM shrxg89yleQeeppU7olX+JaUwx4MwqpQyI4A95qLkeHM+1s+IXhkvgo8ZlMGyDNwr1NGjBjbm+Qq
+#TM D6hYDDSBLTxwvb208mSwYh0okDgxXTyEfwixCC5LDXbFyPxCimUoAG6sHaAiDuHfEO2ESAMlvAUG
+#TM DzMXgsRU+XHA/UsJbouHI8mqjVJ2DqYjoHS+jyjBaYrZSmL94JYVKFm0iaDHT+vJXcoCC63+FROb
+#TM CsH2I8wbmwwmyLRWMJpwmCSgLtQxtRwjh4vLhvYGUWgp9fsdGFytMQZb1+JnZBT3O8PTOA1bZCGJ
+#TM UK75I2CJkUyRCK4AHwmR5fvjZlGswjXGYmw59dlLxcsNqzRZfp0lpJtF2lRCI5jujr9pdcbLrzOE
+#TM Q6KtkSxRh8fImJcDu2DBrtcU514AKE2skEREULTvJaseQ77GMxfuKB3goTw+07lsc84w/VjGpkNR
+#TM 8LZElZwzl3Wgw5YwYB5ryDCdBq0Ehu3gSuQCOqQPdDZx1fv0BfTrDnaTjf6SDaDLPPpL36Q9xS1T
+#TM rw7aWFFoC6h798Cuo98IuXwbKVAgCucOJCUJ1cAIQkTxjNTAsig7XX9POgfKT3Ub01kKi2N8/+8U
+#TM mxnfodbxMyYYQi0FGTD/AXOXa5RA+65B9soU5PMjJv5+wnJrKqbLqaGb40ExJVS2bjneW3LUT772
+#TM V6X4Fp7qyp/lx4/1r6ZpeyggAA9OOXiYjJTwm/1DU3pkk5emy2BBKxkG0t5CXcUdKWImD8HAdS1q
+#TM 1xI0RBUUmQOL7TlZLMYHws2nuIJP8iKL9Sy5/nOAw/qBK8qlmUPHI4Km76rg9c6wsZGC/r/j3iob
+#TM KRSCZ9tJEio/gzP/FXM2iEwKKPX8Fycfo2ZL0zmWNtDSANEKSo4xaXuKijPCO0wLenKXEAFlj+UY
+#TM kS4qytcpjCQ4n21G+Ttn6DqTDefZbeubMqZO2sbjDYP5DwsYI4ldX8faRYohTQTpsZS7cMPesQ/1
+#TM QqHw3i9/OTbzxrXCW1d//T58hVuwsFVAbXCBsuJKhve3JbsPoPPMBT6YFasNd45ncnmZLsqQwZXn
+#TM mB0UIJHdgpR91rcDFiWKj019BdeE0+CivVuO72w7TQcujQF6N28tVZfmlpaXNt/doo/Li1ura5tL
+#TM 19/dml9bWV9e3FxcUPtagFpOm7paai8eBrbXtprr3e2mU1twvLBP1zcX2/uO5zJb8oWljcX5zbWN
+#TM d7dWblaX5jEPB1G8YxfYPU9dUDJUZKCOfJK4ePsOLH3GxpsLa++sLq9VFraqixu3luYXSTqbM2UD
+#TM KFuYc9fWYW9Yh6L0gVOHbs1N14IVacENTII6CodSENmhWXbnEPz7AHdhNL3x5cXVtzdvbFVvrG1s
+#TM Gqa/6x4ARnhl/Xu+9r/8cjmLAXC+/W+pNFW8FLP/nSqWJ17Z/7489r+mxdx+KVBzt9NBf65lJ5G7
+#TM LEQrS/Qn/jZKQuYELWugFFRLyFKcOfsZT9/HRetVTNE+UAo0y6f+U4crrpizZkgzD+ztPeBP3rG3
+#TM bzn2wd9QosMfNb/f32Jmvh8i6d4Zc9UNknuuX4Y4KQNbTpF9AGYHfd7cjslVk7nwDVWgPBCZ5gJs
+#TM orszcEGuI3VsP8kh8TikM0KV8HLkzLl0rjlzSHS2221tI/fV8dx6t8ZYrrcY3uJh9WAEpkOpukWc
+#TM /4qHitSWG9iRlNExj+CA7DAJozN24Q5WOh5r3a4zGxvzg86O4i/cJ2PPZDk3slNGcM/hvTfnxstT
+#TM pUUlmNNEpXi9OI/BnM6U4SdVTEnrnRA2BlGQO7o39EC9QdBTOubKFvOjrkk3FLkGRl/NeYBzI+mZ
+#TM neI4l/DRS3EhTRF0/SD5hfZNrrmTHCbLP4a7KO+dG6gN767aN3QBWjpUWxaub79MQccRzx+adanR
+#TM 7kWKEe7EI2y9JDuvbANobhCG5szooqKj8wEafKE4UWSBQ2kkNHQfPt1jls4/k+k4vVC1g78H6r9a
+#TM 85xOsNhGDIdqqARCZdwAw7wJxAroOQ2x8tJue8HxW47vc3aZY05KV9EJkTg8jeN1veujNyuRUtzW
+#TM j9CxkLgokJcbFjKWOmypDUjbJwZZyckZh+RBIkieS4zIRJxIWp6BMn2k+0qHxy/lvJ7/mczz+5Vo
+#TM gJSkIVYtcD0WbhvDz2aEYuI0MgoTDGRTEqY+SqoTO5gLd5tdCwlGhMf3Wq7M/9zIawgQ6I5vfhA/
+#TM IHFJYWbNutuqwgThJhi2ZsuuOxYidIRcPDgOnFk0BnsbTlDXsxOhaOM/XGSXH5gt0/gPRbl1QQZc
+#TM wyTbGL9ntvQ6/vEdkonCN89uzhYL+dHZ4ALE5FobdoPsaVAiGnarcp85MaAGDgSeHAvaGzVty2f5
+#TM jIB+FStTsLbRH2IbnQUKxhV8VYfF9dwMldUAkZgsv2PXgg3kk/TSVEMb0+KR+oxBUvEBtv8dXQD/
+#TM zEx9B78UmKYoeRGEl4B28lHvzycfCYfGJyd3e3/GpCvZaftOm4Wjf96q0lSfmOADRKVOCaaemAnh
+#TM FpPGg+mj9lGsyyQV/I9Zmd9cWlvdurW0+M6oFsmPM4/HARqmX9uf5QcEzXJg1teb1o4vmry+XHl7
+#TM C9u9hWLh1cV3tjYr1Z8bqZCVn8EkmQFaDu+DykLmP9v7ovdd7xPJ+zQkOmY02mhUFaICkWVoycv7
+#TM 8MOuJjvwL+V6chex0AY/XMsv4M1dpql5FMudC89TV1g4R3PLrZcrYkVf+e8KvBD7e0ohcB/579RE
+#TM KSH/vXRp8pX89yWS/65YbacBl2KWwLfTMtdZS1xBFC/o+uYcxo9MfY5h7hPyHksAHbEgbWTZ+ZPs
+#TM olVBy1NkyOxyQpYkRdnvXzgKnk/6Y++664kRMUvv/k0AWcd5+uyyNlGIi/Ude9PF39klmWEW7YEH
+#TM D011NPP8cbaIlQUdRVHuGwOUqbke8L8YVPT8ZdTDi52lDM5/0/JmUcK39m3c9xDKqvzB36ykehDl
+#TM R56omiZ3Ojm1Z8cV3IhDrODMMWuGCTUzwsKvyPenNqMlkJkuZADIfntOndmcAufv2RgEGOGivtSG
+#TM S6rNxbozGkOY12ThQRxpqOQapgzo+gItAumj4kmzbnl7Wczx5kZltbpe2Vhc3YwJUtvWvrNDZ/Ls
+#TM Ladky/S7HaDcchZCKhqiVSTgiM4icR1mBet6DbQ5yZa4htwNSoOgxobrBiwZc14oSl5qqKw5ZJ64
+#TM bnstbulIF6J5a3GjCmSyWV34+dbS6qZ2dVYbHzc0ceOasAooNEPUt7FYWdhaWVxYqmxVbi4srTEJ
+#TM cGbJxV9sLm6sVpa3qptrG5W3F2kgOPhdy6e4LsrhMAH4a3tVu9lYD9thZhvhuA0MZa3e8+b64sbK
+#TM UhVnsPU2bOjm4kJoFQb73e6bbZvGIif1tvw9KVONBOMUfxrtvjCSRb2uR8O60n85sULaQqFTITPS
+#TM WZqvILtSpWTSLvr51ZkBtJxSmpLk8PtfyaeTQRLoGXeyMBlagYdOp2lHS06rcSdcu1m+WalWc1zI
+#TM ylwueA0jHJ/JPuiwoKI+FgzLVTodEWs/6r5a82zMRZLVSspRiFfW3XYF7XTTRMH50tlY/OUfNN6y
+#TM jD37KLEuTw0TUhQwyS3HbdoBhRKda6Kry6gm0Stn00elhgxFjLfqBnZ6qMSJaSUQdEYk0YzIw+WY
+#TM /ofxx5ua8LEYMhn6sNmQOTv+EKMrAbf9OYqw/iwCcT3qfcsiNAsDMmTOwxAw+JJZXj/kqWajqEtn
+#TM C9Y84FKFUnw6DpKwhkWRfsCCpDyVpxKKB1JPGjuxQ9w5HiWIHth2O5aBLQPbsCb7xL3RhMGpT9J6
+#TM ukwjk1JHwp0igDPHs8mcY2GQUsqzRNyO22yqJ/hgF/2Z9ZSMmhi6aN31HeZ0foVbapeLRUMNx4SL
+#TM BcsiL5UgwfPzxmFF+7Bj4UnMr52Zru4oyN8hrmRLSZDH3W6HGnUY2aeIQM4Ocu+3Wom+UYzcsHmK
+#TM kLsWS245UAcYo+7Fyb1Eou8wth7LCw394ijCAE1/woThI0ruOjQ+RjgKLzD2MJly7gcJUM5QuZHw
+#TM B4nRBNtHS3UJpmmMdArgrwlsgFtzYH3mjrgvSj0kLoniQR8dP7N64FaogK5QSWRinVuJlVBqcewA
+#TM tXDA78npaN9Ho254wJLPqq/C+i2n7fz/7V3NSsNAEL73KeotxRzSgiBIERFBQRS0LxC1hUBopbb+
+#TM IJ68+SjefBzfxvnbzf7kT/AizHcRm81kZrM7M5ts5ptxFDGXPcZ1C79ekxMo7l3lxQO+CI/IDM1U
+#TM QU3ttLFsnINB+5107/f1bb5YrMq7JAqnHr8PZ/Z+zN2s7mGJQi+C5Fv0a/BmkOXIfCI3J1NrSsW2
+#TM wsfLXNdchAwaCNGI31rE7BChk7XKWzxVb54lo5dWjYzHTrFrrljP0l9babp2rC4wecbEAm+n9zSg
+#TM kDS85l6xfb9Xxgfu+QEDZQNBD5uHypiRaHfMOFey42hbpHbIBeOFCXIbe8exFPrlwu3spGmEwKhY
+#TM 5uVJOX/MxUQqZt3Sq24BBMn+2lmU1pjrSwLwBc7uA7e4E1OGn9CdrpC0Nxul/cTRp2eREC5CgcRZ
+#TM /cSAX36nyj6f3x+RsPPiZp2vXyhYpMPJb9/QWuolQ6gLdzMhVqJ0iA/ciOy6hUsb4d1FIgvtJFp7
+#TM mJcwEHjAQGyH0VD4/Lv067DoYhYj9W9pTEgCzkpLOK4IliTFo39HfaRazrLIOktfxk26jXUNRh1r
+#TM Cc5Mgxmt++MGva5SmEh5HAbKkKFqsr8Y9ZO5XdbpXmXm1XFXdXO88xJ/y5PXn3kc3RYsa8Ox7UU4
+#TM s+yFv/XMm5FDq3dJxCKawJBu81kZLsnRv8zyG0oZUsk/UsoJ0Ok298YYT2a/4pzOiQa7a6YQERri
+#TM tniBQVVS9CqlP4S+2GI9zAPMiad+mcsQhphGXBMqZCxxVOq9Y4TlUdRDUWgM22e1RutkAxzZ1qk6
+#TM 2hfa3E0Ge8RccHfOx2f+bgj8ndbcNh5CLA8Cqj/pKOfFRLqEdcTZstqAlghL3H5GT50o09mFZAxb
+#TM ybHJXhZuoZ0/Fxsj7XK7icVlkTho5spr3GErZpjSpxerJ1nOJQUlBPVpY20dmBcrxd+1yKtYuklE
+#TM r/umzBEKhUKhUCgUCoVCoVAoFAqFQqFQKBQKhUKhUCj+M34Aw5FYFgAIAgA=
+#TMEND
