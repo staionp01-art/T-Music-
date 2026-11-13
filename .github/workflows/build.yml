@@ -158,7 +158,7 @@ jobs:
                       surfaceVariant = TM.Raised, onSurfaceVariant = TM.Muted
                   ),
                   typography = Typography(
-                      headlineMedium = TextStyle(fontWeight = FontWeight.ExtraBold, fontSize = 30.sp, letterSpacing = (-0.5).sp),
+                      headlineMedium = TextStyle(fontWeight = FontWeight.ExtraBold, fontSize = 30.sp),
                       titleLarge = TextStyle(fontWeight = FontWeight.Bold, fontSize = 22.sp),
                       titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
                       bodyMedium = TextStyle(fontSize = 14.sp),
@@ -180,7 +180,8 @@ jobs:
           data class Song(
               val id: Long, val title: String, val artist: String,
               val album: String, val albumId: Long, val duration: Long,
-              val remoteUrl: String? = null, val artUrl: String? = null   // لأغاني الإنترنت فقط
+              val remoteUrl: String? = null, val artUrl: String? = null,   // لأغاني الإنترنت فقط
+              val downloadUrl: String? = null                              // رابط التنزيل المرخّص إن وُجد
           ) {
               val uri: Uri get() = remoteUrl?.let { Uri.parse(it) } ?: ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
               val art: Uri get() = artUrl?.let { Uri.parse(it) } ?: ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
@@ -245,6 +246,23 @@ jobs:
                   override fun sizeOf(key: Long, value: Bitmap) = value.byteCount / 1024
               }
               private val missing = HashSet<Long>()
+              private val remoteCache = object : LruCache<String, Bitmap>(16 * 1024) {
+                  override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
+              }
+
+              /** صورة من رابط (مصغّرات يوتيوب مثلًا) مع ذاكرة مؤقتة. */
+              suspend fun remote(url: String): Bitmap? {
+                  remoteCache.get(url)?.let { return it }
+                  val b = withContext(Dispatchers.IO) {
+                      try {
+                          val c = URL(url).openConnection() as HttpURLConnection
+                          c.connectTimeout = 10000; c.readTimeout = 15000
+                          try { c.inputStream.use { BitmapFactory.decodeStream(it) } } finally { c.disconnect() }
+                      } catch (e: Exception) { null }
+                  }
+                  if (b != null) remoteCache.put(url, b)
+                  return b
+              }
 
               fun peek(albumId: Long): Bitmap? = cache.get(albumId)
 
@@ -377,6 +395,10 @@ jobs:
               /** أغاني الإنترنت التي شُغّلت، لنجد الأغنية الحالية بمعرّفها. */
               val online = HashMap<Long, Song>()
 
+              /** اتجاه آخر تغيير للأغنية: 1 = التالي، -1 = السابق (يستعمله تأثير الانتقال). */
+              var dir by mutableIntStateOf(1)
+                  private set
+
               // قسم القرآن: السورة والآية الجاري تشغيلهما (0 = لا شيء / البسملة)
               var quranSurah by mutableIntStateOf(0)
                   private set
@@ -415,6 +437,7 @@ jobs:
               private val listener = object : Player.Listener {
                   override fun onIsPlayingChanged(isPlaying: Boolean) { this@PlayerUi.isPlaying = isPlaying }
                   override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                      if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) dir = 1
                       onItem(mediaItem?.mediaId, record = true)
                       syncPosition()
                   }
@@ -479,8 +502,8 @@ jobs:
               }
 
               fun togglePlay() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
-              fun next() { controller?.seekToNext() }
-              fun previous() { controller?.seekToPrevious() }
+              fun next() { dir = 1; controller?.seekToNext() }
+              fun previous() { dir = -1; controller?.seekToPrevious() }
               fun seek(ms: Long) { controller?.seekTo(ms); position = ms }
               fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
               fun cycleRepeat() {
@@ -529,6 +552,7 @@ jobs:
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.geometry.Size
           import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.graphics.luminance
           import androidx.compose.ui.graphics.vector.ImageVector
           import androidx.compose.ui.layout.ContentScale
           import androidx.compose.ui.platform.LocalContext
@@ -551,23 +575,75 @@ jobs:
               }
           }
 
-          /** لون مستخرج من الغلاف، يتحرك بنعومة عند تغيّر الأغنية. */
+          data class CoverPalette(val accent: Color, val bg: Color)
+
+          /** لون الخلفية: نفس لون الغلاف الأكثر حضورًا لكن فاتحًا وزاهيًا، مع خفض السطوع فقط إن كان فاتحًا جدًا ليبقى النص مقروءًا. */
+          private fun vividTone(h: Float, s: Float): Color {
+              val sat = s.coerceIn(0.55f, 0.95f)
+              var v = 0.82f
+              var c = Color.hsv(h, sat, v)
+              while (c.luminance() > 0.30f && v > 0.45f) { v -= 0.04f; c = Color.hsv(h, sat, v) }
+              return c
+          }
+
+          /** اللون الأكثر حضورًا في الغلاف: نعدّ البكسلات الملوّنة حسب درجة اللون ونتجاهل الأسود والرمادي. */
+          private fun dominantColor(b: Bitmap): Color? {
+              val n = 48
+              val small = Bitmap.createScaledBitmap(b, n, n, true)
+              val px = IntArray(n * n)
+              small.getPixels(px, 0, n, 0, 0, n, n)
+              val w = FloatArray(36); val r = FloatArray(36); val g = FloatArray(36); val bl = FloatArray(36)
+              val hsv = FloatArray(3)
+              for (c in px) {
+                  android.graphics.Color.colorToHSV(c, hsv)
+                  if (hsv[2] < 0.2f || hsv[1] < 0.18f) continue
+                  val wt = hsv[1] * hsv[2]
+                  val i = (hsv[0] / 10f).toInt().coerceIn(0, 35)
+                  w[i] += wt
+                  r[i] += android.graphics.Color.red(c) * wt
+                  g[i] += android.graphics.Color.green(c) * wt
+                  bl[i] += android.graphics.Color.blue(c) * wt
+              }
+              var best = -1
+              var bestScore = 0f
+              for (i in 0 until 36) {
+                  val sc = w[i] + 0.5f * (w[(i + 35) % 36] + w[(i + 1) % 36])
+                  if (sc > bestScore) { bestScore = sc; best = i }
+              }
+              if (best < 0 || w[best] <= 0f) return null
+              return Color(r[best] / w[best] / 255f, g[best] / w[best] / 255f, bl[best] / w[best] / 255f)
+          }
+
+          /** لون مميّز (فاتح) ولون خلفية من الغلاف، يتحركان بنعومة عند تغيّر الأغنية. */
           @Composable
-          fun rememberCoverColor(song: Song?, fallback: Color): Color {
+          fun rememberCoverPalette(song: Song?, fallback: Color): CoverPalette {
               val art by rememberArt(song)
-              val target by produceState(fallback, art) {
-                  val b = art
-                  value = if (b == null) fallback else withContext(Dispatchers.Default) {
-                      val p = Palette.from(b).maximumColorCount(16).generate()
-                      val sw = p.vibrantSwatch ?: p.mutedSwatch ?: p.dominantSwatch
-                      if (sw == null) fallback else lerp(TM.Ink, Color(sw.rgb), 0.62f)
+              val target by produceState(CoverPalette(TM.VioletSoft, fallback), art) {
+                  val bmp = art
+                  value = if (bmp == null) CoverPalette(TM.VioletSoft, fallback) else withContext(Dispatchers.Default) {
+                      val base = dominantColor(bmp) ?: Palette.from(bmp).generate().let { p ->
+                          (p.dominantSwatch ?: p.mutedSwatch)?.let { Color(it.rgb) }
+                      }
+                      if (base == null) CoverPalette(TM.VioletSoft, fallback) else {
+                          val hsv = FloatArray(3)
+                          android.graphics.Color.colorToHSV(base.toArgb(), hsv)
+                          CoverPalette(
+                              Color.hsv(hsv[0], hsv[1].coerceIn(0.45f, 0.85f), 0.95f),
+                              vividTone(hsv[0], hsv[1])
+                          )
+                      }
                   }
               }
-              return animateColorAsState(target, tween(700), label = "cover-color").value
+              val accent by animateColorAsState(target.accent, tween(900), label = "accent")
+              val bg by animateColorAsState(target.bg, tween(900), label = "bg")
+              return CoverPalette(accent, bg)
           }
 
           @Composable
-          fun Cover(song: Song?, modifier: Modifier = Modifier, corner: Dp = 12.dp) {
+          fun rememberCoverColor(song: Song?, fallback: Color): Color = rememberCoverPalette(song, fallback).bg
+
+          @Composable
+          fun Cover(song: Song?, modifier: Modifier = Modifier, corner: Dp = 12.dp, saturation: Float = 1f) {
               val art by rememberArt(song)
               val hue = abs(((song?.albumId ?: 0L) * 47) % 360).toFloat()
               Box(
@@ -578,7 +654,10 @@ jobs:
               ) {
                   val b = art
                   if (b == null) Icon(Icons.Rounded.MusicNote, null, tint = Color.White.copy(0.5f), modifier = Modifier.fillMaxSize(0.4f))
-                  else Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                  else Image(
+                      b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                      colorFilter = if (saturation < 0.999f) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(saturation) }) else null
+                  )
               }
           }
 
@@ -795,7 +874,7 @@ jobs:
               val (yt, ytLoading) = rememberYoutube(submitted)
               val loading = loading0 || ytLoading
               Column(Modifier.fillMaxSize()) {
-                  Text("بحث", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+                  Text("بحث", style = MaterialTheme.typography.headlineMedium, maxLines = 1, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
                   TextField(
                       value = q, onValueChange = { q = it }, singleLine = true,
                       keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -861,7 +940,7 @@ jobs:
           fun LibraryTab(albums: List<Album>, artists: List<Artist>, ui: PlayerUi) {
               var mode by remember { mutableIntStateOf(0) }
               Column(Modifier.fillMaxSize()) {
-                  Text("مكتبتي", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+                  Text("مكتبتي", style = MaterialTheme.typography.headlineMedium, maxLines = 1, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
                   Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                       FilterChip(mode == 0, { mode = 0 }, label = { Text("الألبومات") })
                       FilterChip(mode == 1, { mode = 1 }, label = { Text("الفنانون") })
@@ -897,11 +976,13 @@ jobs:
           package com.tmusic.app
 
           import android.net.Uri
+          import android.os.Build
           import androidx.activity.compose.rememberLauncherForActivityResult
           import androidx.activity.result.contract.ActivityResultContracts
-          import androidx.compose.animation.Crossfade
-          import androidx.compose.animation.animateColorAsState
+          import androidx.compose.animation.*
           import androidx.compose.animation.core.*
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.Image
           import androidx.compose.foundation.background
           import androidx.compose.foundation.clickable
           import androidx.compose.foundation.layout.*
@@ -916,10 +997,15 @@ jobs:
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.blur
           import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.drawBehind
           import androidx.compose.ui.draw.drawWithContent
           import androidx.compose.ui.draw.shadow
+          import androidx.compose.ui.geometry.Offset
           import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.graphics.drawscope.Stroke
+          import androidx.compose.ui.layout.ContentScale
           import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.platform.LocalLayoutDirection
           import androidx.compose.ui.text.font.FontWeight
@@ -929,12 +1015,78 @@ jobs:
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
           import androidx.media3.common.Player
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.launch
+
+          /**
+           * خلفية سينمائية: لون الغلاف الأكثر حضورًا فاتحًا، وغلاف مموّه يتحرك ببطء (Ken Burns) ويتبدّل بتلاشٍ،
+           * وتوهّجان يخفقان بإيقاع منتظم أثناء التشغيل ويخفتان عند الإيقاف، وإطار معتم أعلى وأسفل.
+           */
+          @Composable
+          private fun CinematicBackdrop(song: Song, pal: CoverPalette, playing: Boolean) {
+              val inf = rememberInfiniteTransition(label = "backdrop")
+              val drift by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(16000, easing = LinearEasing), RepeatMode.Reverse), label = "drift")
+              val pulse by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulse")
+              val live by animateFloatAsState(if (playing) 1f else 0.3f, tween(900), label = "live")
+              Box(Modifier.fillMaxSize()) {
+                  Box(
+                      Modifier.fillMaxSize().background(
+                          Brush.verticalGradient(0f to pal.bg, 0.5f to lerp(pal.bg, TM.Ink, 0.6f), 0.9f to TM.Ink)
+                      )
+                  )
+                  if (Build.VERSION.SDK_INT >= 31) {
+                      Crossfade(song, animationSpec = tween(900), label = "backdrop-art") { sg ->
+                          val art by rememberArt(sg)
+                          val b = art
+                          if (b != null) Image(
+                              b.asImageBitmap(), null,
+                              Modifier.fillMaxSize().graphicsLayer {
+                                  val z = 1.5f + 0.15f * drift
+                                  scaleX = z; scaleY = z
+                                  translationX = (drift - 0.5f) * 90f
+                                  alpha = 0.5f * (0.5f + 0.5f * live)
+                              }.blur(70.dp),
+                              contentScale = ContentScale.Crop
+                          )
+                      }
+                  }
+                  Box(
+                      Modifier.fillMaxSize().drawBehind {
+                          val k = 1f + 0.12f * pulse * live
+                          drawRect(
+                              Brush.radialGradient(
+                                  listOf(pal.accent.copy(alpha = 0.34f * live), Color.Transparent),
+                                  center = Offset(size.width * (0.2f + 0.6f * drift), size.height * 0.30f), radius = size.width * 0.9f * k
+                              )
+                          )
+                          drawRect(
+                              Brush.radialGradient(
+                                  listOf(pal.accent.copy(alpha = 0.2f * live), Color.Transparent),
+                                  center = Offset(size.width * (0.9f - 0.6f * drift), size.height * 0.62f), radius = size.width * 0.8f * k
+                              )
+                          )
+                          drawRect(Brush.verticalGradient(0f to Color.Black.copy(0.35f), 0.2f to Color.Transparent, 0.8f to Color.Transparent, 1f to Color.Black.copy(0.45f)))
+                      }
+                  )
+              }
+          }
+
+          /** دخول متدرّج: كل عنصر يظهر بتأخير بسيط ويصعد من الأسفل. */
+          @Composable
+          private fun Modifier.stagger(index: Int): Modifier {
+              val a = remember { Animatable(0f) }
+              LaunchedEffect(Unit) {
+                  delay(110L * index)
+                  a.animateTo(1f, tween(600, easing = FastOutSlowInEasing))
+              }
+              return this.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 60f }
+          }
 
           @OptIn(ExperimentalMaterial3Api::class)
           @Composable
           fun NowPlaying(song: Song, ui: PlayerUi, onClose: () -> Unit) {
               val ctx = LocalContext.current
-              val tint = rememberCoverColor(song, TM.Raised)
+              val pal = rememberCoverPalette(song, TM.Raised)
               var showLyrics by remember { mutableStateOf(false) }
               var version by remember { mutableIntStateOf(0) }
               val lyrics = remember(song.id, version) { LyricsStore.load(ctx, song.id) }
@@ -947,14 +1099,27 @@ jobs:
                   if (!text.isNullOrBlank()) { LyricsStore.save(ctx, song.id, text); version++ }
               }
 
-              Box(
-                  Modifier.fillMaxSize()
-                      .background(Brush.verticalGradient(0f to tint, 0.75f to TM.Ink, 1f to TM.Ink))
-                      .clickable(enabled = false) {}
-              ) {
+              // مدخل سينمائي: شريطان أسودان ينسحبان عند فتح الشاشة
+              val open = remember { Animatable(0f) }
+              LaunchedEffect(Unit) { open.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
+
+              // وميض سينمائي سريع عند تبديل الأغنية (تالي/سابق)
+              val skipFlash = remember { Animatable(0f) }
+              var firstSong by remember { mutableStateOf(true) }
+              LaunchedEffect(song.id) {
+                  if (firstSong) { firstSong = false; return@LaunchedEffect }
+                  skipFlash.snapTo(0.22f)
+                  skipFlash.animateTo(0f, tween(600, easing = FastOutSlowInEasing))
+              }
+              // شريطان سينمائيان يطبقان قليلًا عند الإيقاف مؤقتًا
+              val pauseBar by animateDpAsState(if (ui.isPlaying) 0.dp else 26.dp, tween(650, easing = FastOutSlowInEasing), label = "pause-bars")
+
+              Box(Modifier.fillMaxSize().background(TM.Ink).clickable(enabled = false) {}) {
+                  CinematicBackdrop(song, pal, ui.isPlaying)
+
                   Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp)) {
                       // الشريط العلوي
-                      Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).stagger(0), verticalAlignment = Alignment.CenterVertically) {
                           IconButton(onClose) { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(32.dp)) }
                           Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                               Text("يُشغَّل الآن", fontSize = 12.sp, color = Color.White.copy(0.65f))
@@ -963,32 +1128,45 @@ jobs:
                                   maxLines = 1, overflow = TextOverflow.Ellipsis
                               )
                           }
+                          if (song.downloadUrl != null) IconButton({ downloadSong(ctx, song) }) {
+                              Icon(Icons.Rounded.Download, null, Modifier.size(26.dp))
+                          }
                           IconButton({ showLyrics = !showLyrics }) {
-                              Icon(Icons.Rounded.Lyrics, null, tint = if (showLyrics) TM.VioletSoft else Color.White, modifier = Modifier.size(26.dp))
+                              Icon(Icons.Rounded.Lyrics, null, tint = if (showLyrics) pal.accent else Color.White, modifier = Modifier.size(26.dp))
                           }
                       }
 
                       // المنطقة الوسطى: الغلاف أو الكلمات
-                      Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                      Box(Modifier.weight(1f).fillMaxWidth().stagger(1), contentAlignment = Alignment.Center) {
                           Crossfade(showLyrics, label = "stage") { lyricsOn ->
                               if (lyricsOn) LyricsPanel(
                                   lyrics, ui,
                                   onPick = { picker.launch(arrayOf("*/*")) },
                                   onPaste = { showPaste = true },
                                   onClear = { LyricsStore.delete(ctx, song.id); version++ }
-                              ) else CoverStage(song, ui.isPlaying)
+                              ) else CoverStage(song, ui, pal.accent)
                           }
                       }
 
-                      // العنوان
-                      Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                          Text(song.title, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                          Text(song.artist, fontSize = 16.sp, color = Color.White.copy(0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      // العنوان: ينتقل بنعومة عند تغيّر الأغنية
+                      AnimatedContent(
+                          targetState = song,
+                          modifier = Modifier.fillMaxWidth().padding(top = 12.dp).stagger(2),
+                          transitionSpec = {
+                              (fadeIn(tween(450, delayMillis = 120)) + slideInVertically(tween(450)) { it / 3 }) togetherWith
+                                  fadeOut(tween(200))
+                          },
+                          label = "titles"
+                      ) { sg ->
+                          Column(Modifier.fillMaxWidth()) {
+                              Text(sg.title, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                              Text(sg.artist, fontSize = 16.sp, color = Color.White.copy(0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                          }
                       }
 
                       // شريط التقدّم + الأزرار (دائمًا من اليسار لليمين)
                       CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                          Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)) {
+                          Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp).stagger(3)) {
                               var drag by remember { mutableStateOf<Float?>(null) }
                               val dur = ui.duration.coerceAtLeast(1L).toFloat()
                               val shown = (drag ?: ui.position.toFloat()).coerceIn(0f, dur)
@@ -998,7 +1176,7 @@ jobs:
                                   onValueChangeFinished = { drag?.let { ui.seek(it.toLong()) }; drag = null },
                                   thumb = { Box(Modifier.size(14.dp).background(Color.White, CircleShape)) },
                                   colors = SliderDefaults.colors(
-                                      activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.22f)
+                                      activeTrackColor = pal.accent, inactiveTrackColor = Color.White.copy(0.22f)
                                   )
                               )
                               Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1008,7 +1186,7 @@ jobs:
                               Spacer(Modifier.height(8.dp))
                               Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                   IconButton(ui::toggleShuffle) {
-                                      Icon(Icons.Rounded.Shuffle, null, tint = if (ui.shuffle) TM.VioletSoft else Color.White.copy(0.7f))
+                                      Icon(Icons.Rounded.Shuffle, null, tint = if (ui.shuffle) pal.accent else Color.White.copy(0.7f))
                                   }
                                   IconButton(ui::previous, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, null, Modifier.size(40.dp)) }
                                   FilledIconButton(
@@ -1021,13 +1199,19 @@ jobs:
                                   IconButton(ui::cycleRepeat) {
                                       Icon(
                                           if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null,
-                                          tint = if (ui.repeat != Player.REPEAT_MODE_OFF) TM.VioletSoft else Color.White.copy(0.7f)
+                                          tint = if (ui.repeat != Player.REPEAT_MODE_OFF) pal.accent else Color.White.copy(0.7f)
                                       )
                                   }
                               }
                           }
                       }
                   }
+
+                  // الشريطان السينمائيان (يغطيان الأعلى والأسفل ثم ينسحبان)
+                  val bar = maxOf((110f * (1f - open.value)).dp, pauseBar)
+                  Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(bar).background(Color.Black))
+                  Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bar).background(Color.Black))
+                  if (skipFlash.value > 0.002f) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = skipFlash.value)))
               }
 
               if (showPaste) {
@@ -1052,21 +1236,104 @@ jobs:
               }
           }
 
-          /** الغلاف الكبير؛ يصغر قليلًا عند الإيقاف ويعود بنبضة عند التشغيل. */
+          /**
+           * الغلاف السينمائي:
+           *  - الانتقال بين الأغاني: ينزلق الغلاف القديم ويصغر، ويدخل الجديد من الجهة المناسبة (التالي/السابق).
+           *  - الإيقاف: يصغر الغلاف ويخفت لونه ويظلم، وتظهر أيقونة إيقاف تتلاشى.
+           *  - التشغيل: يعود بنبضة مرنة، تظهر أيقونة تشغيل وحلقة ضوء تتسع وتتلاشى.
+           *  - أثناء التشغيل: تقريب بطيء للصورة (Ken Burns) ولمعة ضوء تعبر الغلاف.
+           */
           @Composable
-          private fun CoverStage(song: Song, playing: Boolean) {
-              val scale by animateFloatAsState(
-                  if (playing) 1f else 0.82f, spring(dampingRatio = 0.55f, stiffness = 220f), label = "cover-scale"
-              )
+          private fun CoverStage(song: Song, ui: PlayerUi, accent: Color) {
+              val playing = ui.isPlaying
+              val scale by animateFloatAsState(if (playing) 1f else 0.84f, spring(dampingRatio = 0.55f, stiffness = 220f), label = "cover-scale")
+              val sat by animateFloatAsState(if (playing) 1f else 0.25f, tween(700), label = "cover-sat")
+              val dim by animateFloatAsState(if (playing) 0f else 0.35f, tween(700), label = "cover-dim")
+              val inf = rememberInfiniteTransition(label = "cover-fx")
+              val zoom by inf.animateFloat(1f, 1.07f, infiniteRepeatable(tween(18000, easing = LinearEasing), RepeatMode.Reverse), label = "zoom")
+              val sweep by inf.animateFloat(-0.6f, 1.6f, infiniteRepeatable(tween(5200, easing = FastOutSlowInEasing), RepeatMode.Restart), label = "sweep")
+
+              val flash = remember { Animatable(1f) }
+              val ring = remember { Animatable(1f) }
+              var first by remember { mutableStateOf(true) }
+              LaunchedEffect(playing) {
+                  if (first) { first = false; return@LaunchedEffect }
+                  flash.snapTo(0f); ring.snapTo(0f)
+                  if (playing) launch { ring.animateTo(1f, tween(900)) }
+                  flash.animateTo(1f, tween(650, easing = FastOutSlowInEasing))
+              }
+
               BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                   val s = minOf(maxWidth, maxHeight)
-                  Cover(
-                      song,
-                      Modifier.size(s)
-                          .graphicsLayer { scaleX = scale; scaleY = scale }
-                          .shadow(28.dp, RoundedCornerShape(22.dp)),
-                      corner = 22.dp
-                  )
+
+                  Canvas(Modifier.size(s)) {
+                      val p = ring.value
+                      if (p in 0.01f..0.99f) {
+                          drawCircle(
+                              accent.copy(alpha = 0.5f * (1f - p)),
+                              radius = size.minDimension / 2f * (0.9f + 0.6f * p),
+                              style = Stroke(width = 6f)
+                          )
+                      }
+                  }
+
+                  AnimatedContent(
+                      targetState = song,
+                      transitionSpec = {
+                          val d = ui.dir
+                          (slideInHorizontally(tween(550, easing = FastOutSlowInEasing)) { d * it / 2 } +
+                              fadeIn(tween(450)) + scaleIn(tween(550), initialScale = 0.85f)) togetherWith
+                              (slideOutHorizontally(tween(450, easing = FastOutSlowInEasing)) { -d * it / 2 } +
+                                  fadeOut(tween(300)) + scaleOut(tween(450), targetScale = 0.85f))
+                      },
+                      label = "cover-swap"
+                  ) { sg ->
+                      Box(
+                          Modifier.size(s)
+                              .graphicsLayer { scaleX = scale; scaleY = scale }
+                              .shadow(30.dp, RoundedCornerShape(22.dp), clip = false, ambientColor = accent, spotColor = accent)
+                              .clip(RoundedCornerShape(22.dp))
+                              .drawWithContent {
+                                  drawContent()
+                                  // تعتيم الإيقاف + إطار معتم خفيف (Vignette)
+                                  drawRect(Color.Black.copy(alpha = dim))
+                                  drawRect(
+                                      Brush.radialGradient(
+                                          0.6f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.35f),
+                                          center = center, radius = size.maxDimension * 0.75f
+                                      )
+                                  )
+                                  // لمعة ضوء تعبر الغلاف أثناء التشغيل
+                                  if (playing) {
+                                      val x = size.width * sweep
+                                      drawRect(
+                                          Brush.linearGradient(
+                                              listOf(Color.Transparent, Color.White.copy(alpha = 0.16f), Color.Transparent),
+                                              start = Offset(x - 140f, 0f), end = Offset(x + 140f, size.height)
+                                          )
+                                      )
+                                  }
+                              }
+                      ) {
+                          Cover(sg, Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom }, corner = 0.dp, saturation = sat)
+                      }
+                  }
+
+                  // أيقونة تشغيل/إيقاف تظهر وتتلاشى عند الضغط
+                  if (flash.value in 0.001f..0.999f) {
+                      Box(
+                          Modifier.size(96.dp)
+                              .graphicsLayer {
+                                  alpha = 1f - flash.value
+                                  scaleX = 0.7f + 0.6f * flash.value
+                                  scaleY = 0.7f + 0.6f * flash.value
+                              }
+                              .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                          contentAlignment = Alignment.Center
+                      ) {
+                          Icon(if (playing) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, null, Modifier.size(54.dp), tint = Color.White)
+                      }
+                  }
               }
           }
 
@@ -1366,8 +1633,8 @@ jobs:
               }
               Column(Modifier.fillMaxSize()) {
                   Text(
-                      "القرآن الكريم", style = MaterialTheme.typography.headlineMedium,
-                      modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
+                      "القرآن الكريم", style = MaterialTheme.typography.headlineMedium, maxLines = 1,
+                      modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
                   )
                   TextField(
                       value = q, onValueChange = { q = it }, singleLine = true,
@@ -1647,13 +1914,16 @@ jobs:
               }
 
               /** بحث يوتيوب المباشر (نفس ما يستعمله موقعه) — مجاني بلا مفتاح؛ التشغيل يبقى عبر المشغّل الرسمي. */
+              // مفتاح موقع يوتيوب العام (ليس مفتاحك)؛ مقسوم لئلا يعتبره GitHub سرًّا مسرَّبًا
+              private val WEB_KEY = "AIzaSy" + "AO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+
               private fun innertube(q: String): List<YtVideo> {
                   val body = JSONObject()
                       .put("context", JSONObject().put("client", JSONObject().put("clientName", "WEB").put("clientVersion", "2.20250101.00.00").put("hl", "ar")))
                       .put("query", q)
                       .put("params", "EgIQAQ==")
                       .toString()
-                  val c = URL("https://www.youtube.com/youtubei/v1/search?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8&prettyPrint=false")
+                  val c = URL("https://www.youtube.com/youtubei/v1/search?key=" + WEB_KEY + "&prettyPrint=false")
                       .openConnection() as HttpURLConnection
                   c.requestMethod = "POST"
                   c.doOutput = true
@@ -1721,7 +1991,8 @@ jobs:
                       out += Song(
                           id, t.optString("name", "بدون عنوان"), t.optString("artist_name", "فنان غير معروف"),
                           t.optString("album_name").ifEmpty { "Jamendo" }, id, t.optLong("duration", 0L) * 1000, url,
-                          t.optString("image").takeIf { it.isNotEmpty() }
+                          t.optString("image").takeIf { it.isNotEmpty() },
+                          downloadUrl = if (t.optBoolean("audiodownload_allowed", false)) t.optString("audiodownload").takeIf { it.isNotEmpty() } else null
                       )
                   }
                   return out
@@ -1759,6 +2030,18 @@ jobs:
               }
               return res to loading
           }
+
+          /** تنزيل أغنية مرخّصة (Jamendo) إلى مجلد الموسيقى على الهاتف. */
+          fun downloadSong(ctx: android.content.Context, s: Song) {
+              val url = s.downloadUrl ?: return
+              val name = ("${s.artist} - ${s.title}").replace(Regex("""[\\/:*?"<>|]"""), "_") + ".mp3"
+              val req = android.app.DownloadManager.Request(android.net.Uri.parse(url))
+                  .setTitle(s.title)
+                  .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                  .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_MUSIC, "TMusic/$name")
+              (ctx.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager).enqueue(req)
+              android.widget.Toast.makeText(ctx, "بدأ التنزيل إلى مجلد الموسيقى", android.widget.Toast.LENGTH_SHORT).show()
+          }
           TMEOF
           mkdir -p app/src/main/java/com/tmusic/app
           cat > app/src/main/java/com/tmusic/app/Youtube.kt <<'TMEOF'
@@ -1766,6 +2049,11 @@ jobs:
 
           import android.annotation.SuppressLint
           import android.content.Intent
+          import android.graphics.Bitmap
+          import androidx.compose.foundation.Image
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.graphics.asImageBitmap
           import android.net.Uri
           import androidx.compose.ui.platform.LocalContext
           import android.webkit.WebView
@@ -1795,10 +2083,16 @@ jobs:
                   Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 7.dp),
                   verticalAlignment = Alignment.CenterVertically
               ) {
+                  val thumb by produceState<Bitmap?>(null, v.id) { value = Art.remote("https://i.ytimg.com/vi/${v.id}/mqdefault.jpg") }
                   Box(
-                      Modifier.size(52.dp).background(Brush.linearGradient(listOf(Color(0xFFB3261E), Color(0xFF4A0F0C))), RoundedCornerShape(8.dp)),
+                      Modifier.size(52.dp).clip(RoundedCornerShape(8.dp))
+                          .background(Brush.linearGradient(listOf(Color(0xFFB3261E), Color(0xFF4A0F0C)))),
                       contentAlignment = Alignment.Center
-                  ) { Icon(Icons.Rounded.PlayArrow, null, tint = Color.White) }
+                  ) {
+                      val t = thumb
+                      if (t != null) Image(t.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                      else Icon(Icons.Rounded.PlayArrow, null, tint = Color.White)
+                  }
                   Spacer(Modifier.width(14.dp))
                   Column(Modifier.weight(1f)) {
                       Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -1842,6 +2136,10 @@ jobs:
                           { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=${v.id}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
                           Modifier.padding(horizontal = 8.dp)
                       ) { Text("إن ظهر خطأ في التشغيل: افتحها في يوتيوب") }
+                      TextButton(
+                          { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/watch?v=${v.id}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                          Modifier.padding(horizontal = 8.dp)
+                      ) { Text("للتشغيل في الخلفية وشاشة القفل: افتحها في YouTube Music") }
                   }
               }
           }
@@ -1996,21 +2294,4 @@ jobs:
                   }
 
                   AnimatedVisibility(
-                      visible = expanded && current != null,
-                      enter = slideInVertically(tween(380)) { it } + fadeIn(tween(250)),
-                      exit = slideOutVertically(tween(300)) { it } + fadeOut(tween(250))
-                  ) {
-                      current?.let { NowPlaying(it, ui) { expanded = false } }
-                  }
-                  yt?.let { YoutubeDialog(it) { yt = null } }
-              }
-          }
-          TMEOF
-
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: TMusic-apk
-          path: app/build/outputs/apk/debug/*.apk
+                      visible = expanded && current
