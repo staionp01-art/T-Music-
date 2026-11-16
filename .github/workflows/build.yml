@@ -24,12 +24,14 @@ jobs:
 
       - name: Unpack project
         run: |
-          if ls tm-part-*.txt >/dev/null 2>&1; then cat tm-part-*.txt | base64 -d | tar xz
-          elif [ -f tm-project.b64.txt ]; then base64 -d tm-project.b64.txt | tar xz
-          elif [ -f tm-project.zip ]; then unzip -oq tm-project.zip
-          elif [ -f tm-project.tar.gz ]; then tar xzf tm-project.tar.gz
+          ls -l tm-* 2>/dev/null || true
+          if [ -f tm-project.zip ]; then echo "USING ZIP"; unzip -oq tm-project.zip
+          elif [ -f tm-project.tar.gz ]; then echo "USING TAR.GZ"; tar xzf tm-project.tar.gz
+          elif [ -f tm-project.b64.txt ]; then echo "USING B64"; base64 -d tm-project.b64.txt | tar xz
+          elif ls tm-part-*.txt >/dev/null 2>&1; then echo "USING PARTS"; cat tm-part-*.txt | base64 -d | tar xz
           else echo "ERROR: no project archive in repo root"; exit 1; fi
-          ls -R app/src | head -40
+          grep -c "LoginGate" app/src/main/java/com/tmusic/app/Account.kt || true
+          ls app/src/main/res/drawable-nodpi | grep tm_logo || echo "NO tm_logo"
 
       - name: Add Firebase config (optional secret GOOGLE_SERVICES_JSON)
         env:
