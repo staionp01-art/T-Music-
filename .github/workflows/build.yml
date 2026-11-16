@@ -12,6 +12,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v5
         with:
@@ -25,10 +27,9 @@ jobs:
       - name: Unpack project
         run: |
           ls -l tm-* 2>/dev/null || true
-          if [ -f tm-project.zip ]; then echo "USING ZIP"; unzip -oq tm-project.zip
+          Z=$(for f in tm-*.zip*; do [ -f "$f" ] && echo "$(git log -1 --format=%ct -- "$f") $f"; done | sort -n | tail -1 | cut -d' ' -f2-)
+          if [ -n "$Z" ]; then echo "USING ZIP: $Z"; unzip -oq "$Z"
           elif [ -f tm-project.tar.gz ]; then echo "USING TAR.GZ"; tar xzf tm-project.tar.gz
-          elif [ -f tm-project.b64.txt ]; then echo "USING B64"; base64 -d tm-project.b64.txt | tar xz
-          elif ls tm-part-*.txt >/dev/null 2>&1; then echo "USING PARTS"; cat tm-part-*.txt | base64 -d | tar xz
           else echo "ERROR: no project archive in repo root"; exit 1; fi
           grep -c "LoginGate" app/src/main/java/com/tmusic/app/Account.kt || true
           ls app/src/main/res/drawable-nodpi | grep tm_logo || echo "NO tm_logo"
