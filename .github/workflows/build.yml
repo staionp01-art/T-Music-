@@ -12,6 +12,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # لازم لمعرفة أحدث ملف zip مرفوع
 
       - uses: actions/setup-java@v5
         with:
@@ -22,13 +24,22 @@ jobs:
         with:
           gradle-version: 8.9
 
-      - name: Unpack project from tm.zip
+      - name: Unpack newest zip in the repository root
         run: |
-          if [ ! -f tm.zip ]; then
-            echo "ERROR: tm.zip not found in the repository root - upload it next to the app folder"
+          # يختار أحدث ملف zip تم رفعه (حسب آخر commit له)، مهما كان اسمه
+          newest=""; newest_t=0
+          for z in ./*.zip; do
+            [ -f "$z" ] || continue
+            t=$(git log -1 --format=%ct -- "$z")
+            [ -z "$t" ] && continue
+            if [ "$t" -gt "$newest_t" ]; then newest_t=$t; newest="$z"; fi
+          done
+          if [ -z "$newest" ]; then
+            echo "ERROR: no zip file found in the repository root"
             exit 1
           fi
-          unzip -oq tm.zip
+          echo "Using: $newest (committed $(date -d @$newest_t))"
+          unzip -oq "$newest"
           ls -R app/src | head -40
 
       - name: Add Firebase config (optional secret GOOGLE_SERVICES_JSON)
