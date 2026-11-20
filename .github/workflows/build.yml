@@ -22,11 +22,23 @@ jobs:
         with:
           gradle-version: 8.9
 
-      - name: Unpack project
+      - name: Unpack project (newest tm-project-vN.tar.gz wins)
         run: |
-          test -f tm-project.tar.gz || { echo "ERROR: tm-project.tar.gz missing in repo root"; exit 1; }
-          tar xzf tm-project.tar.gz
+          ARCH=$(ls tm-project-v*.tar.gz 2>/dev/null | sort -V | tail -1)
+          if [ -z "$ARCH" ]; then ARCH=tm-project.tar.gz; fi
+          test -f "$ARCH" || { echo "ERROR: no tm-project archive in repo root"; exit 1; }
+          echo "USING ARCHIVE: $ARCH"
+          tar xzf "$ARCH"
+          grep -c "hostActivity" app/src/main/java/com/tmusic/app/LiquidGlass.kt || true
           ls -R app/src | head -40
+
+      - name: Apply compile hotfixes (safe to run on already-fixed code)
+        run: |
+          D=app/src/main/java/com/tmusic/app
+          sed -i 's/fun Context\.findActivity()/fun Context.hostActivity()/' $D/LiquidGlass.kt
+          sed -i 's/ctx\.findActivity()/ctx.hostActivity()/' $D/Settings.kt
+          grep -q 'drawscope.drawOutline' $D/LiquidGlass.kt || sed -i 's/^import androidx.compose.ui.graphics.drawscope.Stroke$/&\nimport androidx.compose.ui.graphics.drawscope.drawOutline/' $D/LiquidGlass.kt
+          echo "hotfix check:"; grep -n "hostActivity\|drawscope.drawOutline" $D/LiquidGlass.kt $D/Settings.kt
 
       - name: Add Firebase config (optional secret GOOGLE_SERVICES_JSON)
         env:
