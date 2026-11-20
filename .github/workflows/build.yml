@@ -34,8 +34,21 @@ jobs:
         run: |
           if [ -n "$GS" ]; then echo "$GS" > app/google-services.json; fi
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon -PbuildNum=${{ github.run_number }} -PghRepo=${{ github.repository }}
+      - name: Build debug APK (retries on network errors)
+        run: |
+          set -o pipefail
+          for i in 1 2 3 4; do
+            if gradle assembleDebug --no-daemon -PbuildNum=${{ github.run_number }} -PghRepo=${{ github.repository }} 2>&1 | tee build.log; then
+              exit 0
+            fi
+            if grep -q -e "429" -e "Could not resolve" -e "Could not GET" -e "Received status code 5" build.log; then
+              echo "Network problem, retrying in 75s (attempt $i of 4)"
+              sleep 75
+            else
+              exit 1
+            fi
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
