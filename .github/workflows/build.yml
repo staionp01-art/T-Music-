@@ -37,8 +37,10 @@ jobs:
           D=app/src/main/java/com/tmusic/app
           sed -i 's/fun Context\.findActivity()/fun Context.hostActivity()/' $D/LiquidGlass.kt
           sed -i 's/ctx\.findActivity()/ctx.hostActivity()/' $D/Settings.kt
-          grep -q 'drawscope.drawOutline' $D/LiquidGlass.kt || sed -i 's/^import androidx.compose.ui.graphics.drawscope.Stroke$/&\nimport androidx.compose.ui.graphics.drawscope.drawOutline/' $D/LiquidGlass.kt
-          echo "hotfix check:"; grep -n "hostActivity\|drawscope.drawOutline" $D/LiquidGlass.kt $D/Settings.kt
+          F=$D/LiquidGlass.kt
+          sed -i '/^import androidx.compose.ui.graphics.drawscope.drawOutline$/d' $F
+          grep -q '^import androidx.compose.ui.graphics.drawOutline$' $F || sed -i 's/^import androidx.compose.ui.graphics.drawscope.Stroke$/&\nimport androidx.compose.ui.graphics.drawOutline/' $F
+          echo "hotfix check:"; grep -n "hostActivity\|drawOutline" $D/LiquidGlass.kt $D/Settings.kt
 
       - name: Add Firebase config (optional secret GOOGLE_SERVICES_JSON)
         env:
